@@ -10,6 +10,8 @@
   const lobbyEl        = document.getElementById('lobby');
   const gameEl         = document.getElementById('game');
   const roomInput      = document.getElementById('room-input');
+  const nickInput      = document.getElementById('nick-input');
+  const badgeAvatar    = document.getElementById('badge-avatar');
   const joinBtn        = document.getElementById('join-btn');
   const createBtn      = document.getElementById('create-btn');
   const leaveBtn       = document.getElementById('leave-btn');
@@ -19,6 +21,10 @@
   const statusMsg      = document.getElementById('status-msg');
   const statusMsgGame  = document.getElementById('status-msg-game');
   const roomLabel      = document.getElementById('room-label');
+  const memberCount    = document.getElementById('member-count');
+  const memberList     = document.getElementById('member-list');
+  const roomClosedOverlay = document.getElementById('room-closed-overlay');
+  const roomClosedOk   = document.getElementById('room-closed-ok');
   const localCanvas    = document.getElementById('draw-canvas');
   const localCtx       = localCanvas.getContext('2d');
   const remoteCanvas   = document.getElementById('remote-canvas');
@@ -27,6 +33,15 @@
   const previewCtx     = previewCanvas.getContext('2d');
   const lineWidthInput = document.getElementById('line-width');
   const clearBtn       = document.getElementById('clear-btn');
+
+  // ── Nickname state ────────────────────────────────────────────
+  let myNickname = '匿名玩家';
+
+  // Live update badge avatar as user types
+  nickInput.addEventListener('input', () => {
+    const val = nickInput.value.trim();
+    badgeAvatar.textContent = val ? val[0].toUpperCase() : '?';
+  });
 
   // ── Client identity ───────────────────────────────────────
   const clientId = Math.random().toString(36).slice(2, 10);
@@ -59,8 +74,27 @@
    */
   const remoteStrokes = new Map();
 
-  // ── Canvas resize ─────────────────────────────────────────
+  // ── Canvas resize (preserves drawn content) ───────────────
   function resizeCanvases() {
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+
+    // Preserve content from draw and remote canvases before resizing
+    const localImg  = localCtx.getImageData(0, 0, localCanvas.width,  localCanvas.height);
+    const remoteImg = remoteCtx.getImageData(0, 0, remoteCanvas.width, remoteCanvas.height);
+
+    [localCanvas, remoteCanvas, previewCanvas].forEach(c => {
+      c.width  = W;
+      c.height = H;
+    });
+
+    // Restore preserved content
+    localCtx.putImageData(localImg, 0, 0);
+    remoteCtx.putImageData(remoteImg, 0, 0);
+  }
+
+  // Initial size on first load (no content yet, safe to just resize)
+  function resizeCanvasesFirst() {
     const W = window.innerWidth;
     const H = window.innerHeight;
     [localCanvas, remoteCanvas, previewCanvas].forEach(c => {
@@ -68,7 +102,9 @@
       c.height = H;
     });
   }
+
   window.addEventListener('resize', resizeCanvases);
+  resizeCanvasesFirst();
 
   // ── Coordinate helper ─────────────────────────────────────
   function getPos(canvas, clientX, clientY) {
@@ -278,7 +314,7 @@
     ws.addEventListener('open', () => {
       console.log('[WS] Connection established ✅');
       setStatus(action === 'create_room' ? '正在建立房間…' : '正在搜尋房間…');
-      sendJSON({ event: action, room_id: roomId, data: {} });
+      sendJSON({ event: action, room_id: roomId, data: { nickname: myNickname } });
     });
 
     ws.addEventListener('message', (evt) => {
@@ -302,9 +338,28 @@
         showGame(msg.room_id);
         break;
 
-      case 'player_joined':
-        console.log(`[WS] player_joined room="${msg.room_id}" ✅`);
-        showGame(msg.room_id);
+      case 'player_joined': {
+        const nick = msg.data && msg.data.nickname ? msg.data.nickname : '匿名玩家';
+        console.log(`[WS] player_joined room="${msg.room_id}" nickname="${nick}" ✅`);
+        // Only enter game if we're not already there (i.e. it's our own join)
+        if (gameEl.hidden) showGame(msg.room_id);
+        setGameStatus(`${nick} 加入了房間`);
+        break;
+      }
+
+      case 'member_list':
+        if (Array.isArray(msg.data)) renderMembers(msg.data);
+        break;
+
+      case 'room_closed':
+        console.log(`[WS] room_closed for room "${msg.room_id}"`);
+        // Close WS cleanly then show the notification modal
+        if (ws) {
+          ws.onclose = null;
+          ws.close();
+          ws = null;
+        }
+        roomClosedOverlay.hidden = false;
         break;
 
       case 'draw':
@@ -320,7 +375,7 @@
         setStatus(msg.data.message || '發生錯誤');
         setLobbyBusy(false);
         if (ws) {
-          ws.onclose = null; // Prevent showing '連線已中斷'
+          ws.onclose = null;
           ws.close();
           ws = null;
         }
@@ -418,6 +473,26 @@
     }
   }
 
+  // ── Member panel rendering ───────────────────────────────────
+  function renderMembers(members) {
+    memberCount.textContent = `${members.length} 人`;
+    memberList.innerHTML = '';
+    members.forEach(m => {
+      const li = document.createElement('li');
+      const avatar = m.nickname ? m.nickname[0].toUpperCase() : '?';
+      const isSelf = m.nickname === myNickname;
+      let badgesHtml = '';
+      if (m.is_host) badgesHtml += '<span class="member-host-badge">👑 房主</span>';
+      if (isSelf)    badgesHtml += '<span class="member-self-badge">我</span>';
+      li.innerHTML = `
+        <div class="member-avatar">${avatar}</div>
+        <span class="member-name">${m.nickname}</span>
+        ${badgesHtml}
+      `;
+      memberList.appendChild(li);
+    });
+  }
+
   // ── Generic helpers ───────────────────────────────────────
   function sendJSON(obj) {
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
@@ -428,7 +503,7 @@
 
   function showGame(roomId) {
     currentRoomId = roomId;
-    resizeCanvases();         // size canvases to actual viewport
+    resizeCanvases();
     lobbyEl.hidden = true;
     gameEl.hidden  = false;
     roomLabel.textContent = `房間：${roomId}`;
@@ -492,6 +567,7 @@
     const roomId = roomInput.value.trim();
     if (!roomId) { setStatus('請輸入 6 位數房號'); return; }
     if (!/^\d{6}$/.test(roomId)) { setStatus('房號必須為 6 位數字'); return; }
+    myNickname = nickInput.value.trim() || '匿名玩家';
     setLobbyBusy(true);
     connectWebSocket(roomId, 'join_room');
   });
@@ -500,6 +576,7 @@
   createBtn.addEventListener('click', () => {
     const roomId = String(Math.floor(Math.random() * 900000) + 100000);
     roomInput.value = roomId;
+    myNickname = nickInput.value.trim() || '匿名玩家';
     setStatus(`建立房間中：${roomId}`);
     setLobbyBusy(true);
     connectWebSocket(roomId, 'create_room');
@@ -530,6 +607,12 @@
   /** Confirm — leave room and return to lobby */
   confirmOk.addEventListener('click', () => {
     confirmOverlay.hidden = true;
+    returnToLobby();
+  });
+
+  /** Room closed by host — OK goes back to lobby */
+  roomClosedOk.addEventListener('click', () => {
+    roomClosedOverlay.hidden = true;
     returnToLobby();
   });
 
@@ -573,6 +656,12 @@
     roomInput.value = '';
     setStatus('');
     setLobbyBusy(false);
+    // Clear member panel
+    memberList.innerHTML = '';
+    memberCount.textContent = '0 人';
+    // Ensure modals are hidden
+    roomClosedOverlay.hidden = true;
+    confirmOverlay.hidden    = true;
 
     // Switch screens
     gameEl.hidden  = true;

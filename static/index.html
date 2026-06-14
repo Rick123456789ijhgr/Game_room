@@ -22,24 +22,39 @@
       <img class="lobby-logo" src="/assets/home_page/pen.png" alt="Pen Logo" />
       <h1>你畫我猜</h1>
       <p class="lobby-sub">Draw &amp; Guess — 多人即時繪圖猜謎</p>
-      <!-- Join existing room -->
-      <div id="join-form">
-        <input id="room-input" type="text" placeholder="輸入 6 位數房號" maxlength="6" autocomplete="off"
-          inputmode="numeric" />
-        <button id="join-btn" class="cartoon-btn">加入房間</button>
+
+      <!-- Nickname + Join section -->
+      <div id="lobby-main">
+
+        <!-- Left: Nickname badge -->
+        <div class="badge-card">
+          <div class="badge-header">
+            <span class="badge-logo">🎨</span>
+            <span class="badge-title">PLAYER ID</span>
+          </div>
+          <div class="badge-avatar" id="badge-avatar">?</div>
+          <input id="nick-input" type="text" placeholder="輸入暱稱" maxlength="10" autocomplete="off" />
+          <div class="badge-footer">Draw &amp; Guess</div>
+        </div>
+
+        <!-- Right: Room actions -->
+        <div class="room-actions">
+          <div id="join-form">
+            <input id="room-input" type="text" placeholder="輸入 6 位數房號" maxlength="6" autocomplete="off"
+              inputmode="numeric" />
+            <button id="join-btn" class="cartoon-btn">加入房間</button>
+          </div>
+
+          <div class="lobby-divider"><span>或</span></div>
+
+          <button id="create-btn" class="cartoon-btn">
+            <svg viewBox="0 0 24 24">
+              <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 10h-4v4h-2v-4H7v-2h4V7h2v4h4v2z" />
+            </svg>
+            建立新房間
+          </button>
+        </div>
       </div>
-
-      <!-- Divider -->
-      <div class="lobby-divider"><span>或</span></div>
-
-      <!-- Create new room -->
-      <button id="create-btn" class="cartoon-btn">
-        <svg viewBox="0 0 24 24">
-          <path
-            d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 10h-4v4h-2v-4H7v-2h4V7h2v4h4v2z" />
-        </svg>
-        建立新房間
-      </button>
 
       <p id="status-msg"></p>
     </div>
@@ -59,6 +74,15 @@
       <span id="room-label">房間</span>
       <span class="hud-sep">·</span>
       <span id="status-msg-game">連線中</span>
+    </div>
+
+    <!-- Floating member list — top right -->
+    <div id="member-panel">
+      <div id="member-panel-header">
+        <span>👥</span>
+        <span id="member-count">0 人</span>
+      </div>
+      <ul id="member-list"></ul>
     </div>
 
     <!-- Floating leave button — top left -->
@@ -163,6 +187,18 @@
       <div class="confirm-actions">
         <button id="confirm-cancel">取消</button>
         <button id="confirm-ok">確認離開</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Room Closed notification modal -->
+  <div id="room-closed-overlay" hidden>
+    <div id="confirm-box">
+      <div class="confirm-icon">🚨</div>
+      <h3>房間已關閉</h3>
+      <p>房主已離開，房間對應關閉。<br />請回到大廳重新創建或加入房間。</p>
+      <div class="confirm-actions">
+        <button id="room-closed-ok">回到大廳</button>
       </div>
     </div>
   </div>

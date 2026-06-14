@@ -18,6 +18,54 @@ type Message struct {
 	Data   json.RawMessage `json:"data"`
 }
 
+// JoinData is the payload for join_room / create_room events
+type JoinData struct {
+	Nickname string `json:"nickname"`
+}
+
+// MemberInfo is a single member entry in the member list broadcast
+type MemberInfo struct {
+	Nickname string `json:"nickname"`
+	IsHost   bool   `json:"is_host"`
+}
+
+// buildMemberList collects all sessions in a given room and returns their member info.
+func buildMemberList(m *melody.Melody, roomID string) []MemberInfo {
+	sessions, _ := m.Sessions()
+	var members []MemberInfo
+	for _, s := range sessions {
+		r, ok := s.Get("room")
+		if !ok || r != roomID {
+			continue
+		}
+		nick := "匿名玩家"
+		if n, ok := s.Get("nickname"); ok && n != "" {
+			nick = n.(string)
+		}
+		isHost := false
+		if h, ok := s.Get("is_host"); ok {
+			isHost = h.(bool)
+		}
+		members = append(members, MemberInfo{Nickname: nick, IsHost: isHost})
+	}
+	return members
+}
+
+// broadcastMemberList sends the current member list to everyone in the room.
+func broadcastMemberList(m *melody.Melody, roomID string) {
+	members := buildMemberList(m, roomID)
+	data, _ := json.Marshal(members)
+	resp, _ := json.Marshal(Message{
+		Event:  "member_list",
+		RoomID: roomID,
+		Data:   json.RawMessage(data),
+	})
+	m.BroadcastFilter(resp, func(other *melody.Session) bool {
+		r, ok := other.Get("room")
+		return ok && r == roomID
+	})
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -35,6 +83,37 @@ func main() {
 
 	m.HandleDisconnect(func(s *melody.Session) {
 		log.Printf("[WS] Client disconnected: %s", s.Request.RemoteAddr)
+		r, hasRoom := s.Get("room")
+		if !hasRoom {
+			return
+		}
+		roomID := r.(string)
+
+		// Check if the disconnected session was the host
+		isHost := false
+		if h, ok := s.Get("is_host"); ok {
+			isHost = h.(bool)
+		}
+
+		if isHost {
+			// Host left → close the entire room for all remaining members
+			log.Printf("[WS] Host left room %q — broadcasting room_closed", roomID)
+			resp, _ := json.Marshal(Message{
+				Event:  "room_closed",
+				RoomID: roomID,
+				Data:   json.RawMessage(`{}`),
+			})
+			m.BroadcastFilter(resp, func(other *melody.Session) bool {
+				if other == s {
+					return false
+				}
+				otherRoom, exists := other.Get("room")
+				return exists && otherRoom == roomID
+			})
+		} else {
+			// Non-host left → just update the member list
+			broadcastMemberList(m, roomID)
+		}
 	})
 
 	m.HandleMessage(func(s *melody.Session, rawMsg []byte) {
@@ -47,16 +126,28 @@ func main() {
 
 		switch msg.Event {
 		case "create_room":
-			// User explicitly wants to create a room.
+			// Parse nickname
+			var d JoinData
+			json.Unmarshal(msg.Data, &d)
+			nick := d.Nickname
+			if nick == "" {
+				nick = "匿名玩家"
+			}
+
 			s.Set("room", msg.RoomID)
-			log.Printf("[WS] %s created room %q", s.Request.RemoteAddr, msg.RoomID)
-			
+			s.Set("nickname", nick)
+			s.Set("is_host", true)
+			log.Printf("[WS] %s created room %q as %q (host)", s.Request.RemoteAddr, msg.RoomID, nick)
+
 			resp, _ := json.Marshal(Message{
 				Event:  "room_created",
 				RoomID: msg.RoomID,
 				Data:   json.RawMessage(`{}`),
 			})
 			s.Write(resp)
+
+			// Broadcast member list (just self)
+			broadcastMemberList(m, msg.RoomID)
 
 		case "join_room":
 			// Check if room exists
@@ -80,20 +171,33 @@ func main() {
 				return
 			}
 
-			// Bind this session to the given room
-			s.Set("room", msg.RoomID)
-			log.Printf("[WS] %s joined room %q", s.Request.RemoteAddr, msg.RoomID)
+			// Parse nickname
+			var d JoinData
+			json.Unmarshal(msg.Data, &d)
+			nick := d.Nickname
+			if nick == "" {
+				nick = "匿名玩家"
+			}
 
-			// Broadcast player_joined to everyone in the same room (including self)
-			resp, _ := json.Marshal(Message{
+			s.Set("room", msg.RoomID)
+			s.Set("nickname", nick)
+			s.Set("is_host", false)
+			log.Printf("[WS] %s joined room %q as %q", s.Request.RemoteAddr, msg.RoomID, nick)
+
+			// Notify everyone in room that a player joined (with nickname)
+			joinData, _ := json.Marshal(map[string]string{"nickname": nick})
+			joinResp, _ := json.Marshal(Message{
 				Event:  "player_joined",
 				RoomID: msg.RoomID,
-				Data:   json.RawMessage(`{}`),
+				Data:   json.RawMessage(joinData),
 			})
-			m.BroadcastFilter(resp, func(other *melody.Session) bool {
+			m.BroadcastFilter(joinResp, func(other *melody.Session) bool {
 				otherRoom, exists := other.Get("room")
 				return exists && otherRoom == msg.RoomID
 			})
+
+			// Then send updated member list to all
+			broadcastMemberList(m, msg.RoomID)
 
 		case "draw":
 			// Relay draw event to everyone in the same room, excluding the sender
