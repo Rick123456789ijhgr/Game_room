@@ -10,6 +10,11 @@
   padding: 0;
 }
 
+/* Ensure the HTML 'hidden' attribute always wins over CSS display rules */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   width: 100%;
@@ -646,6 +651,333 @@ body {
 
 #status-msg:not(:empty) {
   opacity: 1;
+}
+
+/* ══════════════════════════════════════════════════════
+   WAITING ROOM
+══════════════════════════════════════════════════════ */
+#waiting-room {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fffef5;
+  z-index: 10;
+  overflow: hidden;
+}
+
+.wr-card {
+  position: relative;
+  z-index: 2;
+  background: #ffffff;
+  border: 4px solid #111111;
+  border-radius: 24px;
+  box-shadow: 8px 8px 0px #111111;
+  width: 800px;
+  max-width: 95vw;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Header */
+.wr-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 16px;
+  border-bottom: 4px solid #111111;
+  background: #ffd93d;
+  flex-shrink: 0;
+}
+
+.wr-title-group {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.wr-emoji {
+  font-size: 2.4rem;
+}
+
+.wr-title {
+  font-size: 1.5rem;
+  font-weight: 900;
+  color: #111111;
+  margin: 0 0 2px;
+  line-height: 1;
+}
+
+.wr-room-id {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #555555;
+}
+
+.wr-room-id strong {
+  color: #111111;
+  font-size: 1rem;
+  letter-spacing: 2px;
+}
+
+.wr-leave-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: #ffffff;
+  border: 3px solid #111111;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 3px 3px 0px #111111;
+  transition: transform 0.1s, box-shadow 0.1s, background 0.15s;
+  font-family: inherit;
+}
+
+.wr-leave-btn svg {
+  width: 16px;
+  height: 16px;
+  fill: #111111;
+  flex-shrink: 0;
+}
+
+.wr-leave-btn:hover {
+  background: #ff6b6b;
+  color: #ffffff;
+}
+
+.wr-leave-btn:hover svg { fill: #ffffff; }
+
+.wr-leave-btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0px #111111;
+}
+
+/* Member list */
+.wr-members-wrap {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+
+.wr-section-label {
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: #888888;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 12px;
+}
+
+#wr-member-list {
+  list-style: none;
+  margin: 0;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 20px 16px;
+}
+
+#wr-member-list li {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px 10px 16px;
+  background: #f8f8f8;
+  border: 2px solid #e0e0e0;
+  border-radius: 16px;
+  animation: memberIn 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  transition: border-color 0.2s, transform 0.2s;
+  text-align: center;
+}
+
+#wr-member-list li:hover {
+  transform: translateY(-2px);
+}
+
+#wr-member-list li.wr-ready {
+  border-color: #43a047;
+  background: #f0fff0;
+}
+
+.wr-member-avatar {
+  width: 54px;
+  height: 54px;
+  border-radius: 16px;
+  background: #4dacff;
+  border: 3px solid #111111;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: 900;
+  color: #ffffff;
+  flex-shrink: 0;
+  box-shadow: 2px 2px 0px #111111;
+}
+
+.wr-member-name {
+  font-size: 1rem;
+  font-weight: 800;
+  color: #111111;
+  width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wr-badge {
+  position: absolute;
+  top: -10px;
+  padding: 4px 8px;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  font-weight: 900;
+  border: 2px solid #111111;
+  box-shadow: 2px 2px 0px #111111;
+  white-space: nowrap;
+  z-index: 2;
+}
+
+.wr-badge-left {
+  left: -8px;
+}
+
+.wr-badge-right {
+  right: -8px;
+}
+
+.wr-host-label {
+  margin-top: auto;
+  width: 100%;
+  padding: 6px 10px;
+  background: #ffd93d;
+  color: #111111;
+  border: 2px solid #111111;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  font-weight: 800;
+  box-shadow: 2px 2px 0px #111111;
+  flex-shrink: 0;
+  cursor: default;
+}
+
+.wr-badge-ready {
+  background: #43a047;
+  color: #ffffff;
+}
+
+.wr-badge-waiting {
+  background: #e0e0e0;
+  color: #555555;
+}
+
+.wr-kick-btn {
+  margin-top: auto;
+  width: 100%;
+  padding: 6px 10px;
+  background: #ff6b6b;
+  color: #ffffff;
+  border: 2px solid #111111;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  font-weight: 800;
+  cursor: pointer;
+  font-family: inherit;
+  box-shadow: 2px 2px 0px #111111;
+  transition: transform 0.1s, box-shadow 0.1s, background 0.15s;
+  flex-shrink: 0;
+}
+
+.wr-kick-btn:hover { background: #e53935; }
+.wr-kick-btn:active {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0px #111111;
+}
+
+/* Action bar */
+.wr-action-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  border-top: 4px solid #111111;
+  background: #fafafa;
+  flex-shrink: 0;
+}
+
+.wr-ready-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  background: #4dacff;
+  color: #111111;
+  border: 3px solid #111111;
+  border-radius: 20px;
+  font-size: 1rem;
+  font-weight: 900;
+  cursor: pointer;
+  font-family: inherit;
+  box-shadow: 4px 4px 0px #111111;
+  transition: transform 0.1s, box-shadow 0.1s, background 0.15s;
+  flex: 1;
+}
+
+.wr-ready-btn[data-ready="true"] {
+  background: #43a047;
+  color: #ffffff;
+}
+
+.wr-ready-btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0px #111111;
+}
+
+.wr-start-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  background: #ff6b6b;
+  color: #ffffff;
+  border: 3px solid #111111;
+  border-radius: 20px;
+  font-size: 1rem;
+  font-weight: 900;
+  cursor: pointer;
+  font-family: inherit;
+  box-shadow: 4px 4px 0px #111111;
+  transition: transform 0.1s, box-shadow 0.1s, background 0.15s, opacity 0.2s;
+  flex: 1;
+}
+
+.wr-start-btn:disabled {
+  background: #cccccc;
+  color: #888888;
+  cursor: not-allowed;
+  box-shadow: 2px 2px 0px #cccccc;
+}
+
+.wr-start-btn:not(:disabled):active {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0px #111111;
+}
+
+.wr-status {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #888888;
+  text-align: right;
+  flex-shrink: 0;
 }
 
 /* ══════════════════════════════════════════════════════

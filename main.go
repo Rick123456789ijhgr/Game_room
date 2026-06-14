@@ -27,6 +27,7 @@ type JoinData struct {
 type MemberInfo struct {
 	Nickname string `json:"nickname"`
 	IsHost   bool   `json:"is_host"`
+	IsReady  bool   `json:"is_ready"`
 }
 
 // buildMemberList collects all sessions in a given room and returns their member info.
@@ -46,7 +47,11 @@ func buildMemberList(m *melody.Melody, roomID string) []MemberInfo {
 		if h, ok := s.Get("is_host"); ok {
 			isHost = h.(bool)
 		}
-		members = append(members, MemberInfo{Nickname: nick, IsHost: isHost})
+		isReady := false
+		if rd, ok := s.Get("is_ready"); ok {
+			isReady = rd.(bool)
+		}
+		members = append(members, MemberInfo{Nickname: nick, IsHost: isHost, IsReady: isReady})
 	}
 	return members
 }
@@ -64,6 +69,26 @@ func broadcastMemberList(m *melody.Melody, roomID string) {
 		r, ok := other.Get("room")
 		return ok && r == roomID
 	})
+}
+
+// allReady returns true if every non-host session in the room has is_ready = true.
+func allReady(m *melody.Melody, roomID string) bool {
+	sessions, _ := m.Sessions()
+	for _, s := range sessions {
+		r, ok := s.Get("room")
+		if !ok || r != roomID {
+			continue
+		}
+		// Host is always considered ready
+		if h, ok := s.Get("is_host"); ok && h.(bool) {
+			continue
+		}
+		rd, ok := s.Get("is_ready")
+		if !ok || !rd.(bool) {
+			return false
+		}
+	}
+	return true
 }
 
 func main() {
@@ -137,6 +162,7 @@ func main() {
 			s.Set("room", msg.RoomID)
 			s.Set("nickname", nick)
 			s.Set("is_host", true)
+			s.Set("is_ready", true) // Host is always ready
 			log.Printf("[WS] %s created room %q as %q (host)", s.Request.RemoteAddr, msg.RoomID, nick)
 
 			resp, _ := json.Marshal(Message{
@@ -182,6 +208,7 @@ func main() {
 			s.Set("room", msg.RoomID)
 			s.Set("nickname", nick)
 			s.Set("is_host", false)
+			s.Set("is_ready", false) // Non-host starts as not ready
 			log.Printf("[WS] %s joined room %q as %q", s.Request.RemoteAddr, msg.RoomID, nick)
 
 			// Notify everyone in room that a player joined (with nickname)
@@ -198,6 +225,107 @@ func main() {
 
 			// Then send updated member list to all
 			broadcastMemberList(m, msg.RoomID)
+
+		case "player_ready":
+			// Toggle is_ready for sender
+			senderRoom, ok := s.Get("room")
+			if !ok {
+				return
+			}
+			// Host cannot toggle (always ready)
+			if h, ok := s.Get("is_host"); ok && h.(bool) {
+				return
+			}
+			current := false
+			if rd, ok := s.Get("is_ready"); ok {
+				current = rd.(bool)
+			}
+			s.Set("is_ready", !current)
+			log.Printf("[WS] %s toggled ready → %v in room %q", s.Request.RemoteAddr, !current, senderRoom)
+			broadcastMemberList(m, senderRoom.(string))
+
+		case "kick_player":
+			// Only host can kick
+			isHost := false
+			if h, ok := s.Get("is_host"); ok {
+				isHost = h.(bool)
+			}
+			if !isHost {
+				return
+			}
+			senderRoom, ok := s.Get("room")
+			if !ok {
+				return
+			}
+			// Parse target nickname
+			var kd struct {
+				Nickname string `json:"nickname"`
+			}
+			json.Unmarshal(msg.Data, &kd)
+
+			// Find and close the target session
+			sessions, _ := m.Sessions()
+			for _, target := range sessions {
+				if target == s {
+					continue // host cannot kick themselves
+				}
+				r, ok := target.Get("room")
+				if !ok || r != senderRoom {
+					continue
+				}
+				tn, ok := target.Get("nickname")
+				if !ok || tn.(string) != kd.Nickname {
+					continue
+				}
+				// Send kicked event to target
+				kickedMsg, _ := json.Marshal(Message{
+					Event:  "kicked",
+					RoomID: senderRoom.(string),
+					Data:   json.RawMessage(`{}`),
+				})
+				target.Write(kickedMsg)
+				target.Close()
+				log.Printf("[WS] Host kicked %q from room %q", kd.Nickname, senderRoom)
+				break
+			}
+			broadcastMemberList(m, senderRoom.(string))
+
+		case "start_game":
+			// Only host can start
+			isHost := false
+			if h, ok := s.Get("is_host"); ok {
+				isHost = h.(bool)
+			}
+			if !isHost {
+				return
+			}
+			senderRoom, ok := s.Get("room")
+			if !ok {
+				return
+			}
+			roomID := senderRoom.(string)
+
+			// Verify all players are ready
+			if !allReady(m, roomID) {
+				resp, _ := json.Marshal(Message{
+					Event:  "error",
+					RoomID: roomID,
+					Data:   json.RawMessage(`{"message":"還有玩家尚未準備好"}`),
+				})
+				s.Write(resp)
+				return
+			}
+
+			log.Printf("[WS] Game starting in room %q", roomID)
+			resp, _ := json.Marshal(Message{
+				Event:  "game_start",
+				RoomID: roomID,
+				Data:   json.RawMessage(`{}`),
+			})
+			m.BroadcastFilter(resp, func(other *melody.Session) bool {
+				r, ok := other.Get("room")
+				return ok && r == roomID
+			})
 
 		case "draw":
 			// Relay draw event to everyone in the same room, excluding the sender

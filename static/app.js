@@ -8,6 +8,7 @@
 
   // ── DOM refs ─────────────────────────────────────────────
   const lobbyEl = document.getElementById('lobby');
+  const waitingRoomEl = document.getElementById('waiting-room');
   const gameEl = document.getElementById('game');
   const roomInput = document.getElementById('room-input');
   const nickInput = document.getElementById('nick-input');
@@ -40,6 +41,13 @@
   const previewCtx = previewCanvas.getContext('2d');
   const lineWidthInputs = [document.getElementById('line-width'), document.getElementById('line-width-left')];
   const clearBtns = [document.getElementById('clear-btn'), document.getElementById('clear-btn-left')];
+  // Waiting room refs
+  const wrRoomLabel = document.getElementById('wr-room-label');
+  const wrMemberList = document.getElementById('wr-member-list');
+  const wrReadyBtn = document.getElementById('wr-ready-btn');
+  const wrStartBtn = document.getElementById('wr-start-btn');
+  const wrStatus = document.getElementById('wr-status');
+  const wrLeaveBtn = document.getElementById('wr-leave-btn');
 
   // ── Nickname state ────────────────────────────────────────────
   let myNickname = '匿名玩家';
@@ -98,6 +106,7 @@
   let isPainting = false;
   let shapeStart = null;  // { x, y } for shape tools
   let currentRoomId = '';    // set when player_joined is received
+  let amIHost = false;       // track local player's host status
 
   // ── Remote stroke state (per peer) ───────────────────────
   /**
@@ -367,21 +376,31 @@
     switch (msg.event) {
       case 'room_created':
         console.log(`[WS] room_created room="${msg.room_id}" ✅`);
-        showGame(msg.room_id);
-        appendSystemMsg('房間已建立，等待其他玩家加入…');
+        amIHost = true;
+        showWaitingRoom(msg.room_id);
         break;
 
       case 'player_joined': {
         const nick = msg.data && msg.data.nickname ? msg.data.nickname : '匿名玩家';
         console.log(`[WS] player_joined room="${msg.room_id}" nickname="${nick}" ✅`);
-        if (gameEl.hidden) showGame(msg.room_id);
-        setGameStatus(`${nick} 加入了房間`);
-        appendSystemMsg(`🟡 ${nick} 加入了房間`);
+        // If it's me joining (non-host), go to waiting room
+        if (waitingRoomEl.hidden && gameEl.hidden && nick === myNickname) {
+          amIHost = false;
+          showWaitingRoom(msg.room_id);
+        } else if (!gameEl.hidden) {
+          // Already in game canvas, show notification
+          setGameStatus(`${nick} 加入了房間`);
+          appendSystemMsg(`🟡 ${nick} 加入了房間`);
+        }
         break;
       }
 
       case 'member_list':
-        if (Array.isArray(msg.data)) renderMembers(msg.data);
+        if (Array.isArray(msg.data)) {
+          renderWaitingRoomMembers(msg.data);
+          // Also update sidebar member list if in game
+          renderMembers(msg.data);
+        }
         break;
 
       case 'room_closed':
@@ -392,6 +411,19 @@
           ws = null;
         }
         roomClosedOverlay.hidden = false;
+        break;
+
+      case 'kicked':
+        console.log('[WS] kicked from room');
+        if (ws) { ws.onclose = null; ws.close(); ws = null; }
+        alert('你被房主踢出了房間。');
+        returnToLobby();
+        break;
+
+      case 'game_start':
+        console.log('[WS] game_start — entering canvas');
+        showGame(currentRoomId);
+        appendSystemMsg('🎮 遊戲開始！');
         break;
 
       case 'chat': {
@@ -586,10 +618,113 @@
   function setStatus(text) { statusMsg.textContent = text; }
   function setGameStatus(text) { statusMsgGame.textContent = text; }
 
+  // ── Waiting room helpers ──────────────────────────────────
+  function showWaitingRoom(roomId) {
+    currentRoomId = roomId;
+    wrRoomLabel.textContent = roomId;
+    lobbyEl.hidden = true;
+    waitingRoomEl.hidden = false;
+    gameEl.hidden = true;
+
+    // Show correct action button based on host status
+    wrReadyBtn.hidden = amIHost;
+    wrStartBtn.hidden = !amIHost;
+    wrReadyBtn.dataset.ready = 'false';
+    wrReadyBtn.querySelector('.wr-ready-text').textContent = '準備好了！';
+    wrReadyBtn.querySelector('.wr-ready-icon').textContent = '✅';
+    wrStartBtn.disabled = true;
+    wrStatus.textContent = '';
+  }
+
+  function renderWaitingRoomMembers(members) {
+    wrMemberList.innerHTML = '';
+    const allNonHostReady = members.every(m => m.is_host || m.is_ready);
+    const total = members.length;
+    const readyCount = members.filter(m => m.is_host || m.is_ready).length;
+
+    members.forEach(m => {
+      const li = document.createElement('li');
+      if (m.is_ready || m.is_host) li.classList.add('wr-ready');
+
+      const avatar = document.createElement('div');
+      avatar.className = 'wr-member-avatar';
+      avatar.textContent = m.nickname ? m.nickname[0].toUpperCase() : '?';
+
+      const name = document.createElement('span');
+      name.className = 'wr-member-name';
+      name.textContent = m.nickname;
+
+      li.appendChild(avatar);
+      li.appendChild(name);
+
+      if (m.is_host) {
+        const badge = document.createElement('div');
+        badge.className = 'wr-host-label';
+        badge.textContent = '👑 房主';
+        li.appendChild(badge);
+      }
+
+      const statusBadge = document.createElement('span');
+      if (m.is_host || m.is_ready) {
+        statusBadge.className = 'wr-badge wr-badge-ready wr-badge-left';
+        statusBadge.textContent = '✅ 已準備';
+      } else {
+        statusBadge.className = 'wr-badge wr-badge-waiting wr-badge-left';
+        statusBadge.textContent = '⏳ 等待中';
+      }
+      li.appendChild(statusBadge);
+
+      // Kick button (only visible to host, for non-self non-host members)
+      if (amIHost && !m.is_host) {
+        const kickBtn = document.createElement('button');
+        kickBtn.className = 'wr-kick-btn';
+        kickBtn.textContent = '踢出';
+        kickBtn.addEventListener('click', () => {
+          sendJSON({ event: 'kick_player', room_id: currentRoomId, data: { nickname: m.nickname } });
+        });
+        li.appendChild(kickBtn);
+      }
+
+      wrMemberList.appendChild(li);
+    });
+
+    // Update host start button state
+    if (amIHost) {
+      wrStartBtn.disabled = !allNonHostReady;
+      wrStatus.textContent = `${readyCount}/${total} 人已準備`;
+    } else {
+      wrStatus.textContent = `${readyCount}/${total} 人已準備`;
+    }
+  }
+
+  // Waiting room: ready button
+  wrReadyBtn.addEventListener('click', () => {
+    const isReady = wrReadyBtn.dataset.ready === 'true';
+    const newReady = !isReady;
+    wrReadyBtn.dataset.ready = String(newReady);
+    if (newReady) {
+      wrReadyBtn.querySelector('.wr-ready-text').textContent = '取消準備';
+      wrReadyBtn.querySelector('.wr-ready-icon').textContent = '❌';
+    } else {
+      wrReadyBtn.querySelector('.wr-ready-text').textContent = '準備好了！';
+      wrReadyBtn.querySelector('.wr-ready-icon').textContent = '✅';
+    }
+    sendJSON({ event: 'player_ready', room_id: currentRoomId, data: {} });
+  });
+
+  // Waiting room: start game button (host only)
+  wrStartBtn.addEventListener('click', () => {
+    sendJSON({ event: 'start_game', room_id: currentRoomId, data: {} });
+  });
+
+  // Waiting room: leave button
+  wrLeaveBtn.addEventListener('click', () => returnToLobby());
+
   function showGame(roomId) {
     currentRoomId = roomId;
     resizeCanvases();
     lobbyEl.hidden = true;
+    waitingRoomEl.hidden = true;
     gameEl.hidden = false;
     roomLabel.textContent = `房間：${roomId}`;
     setGameStatus('已連線');
@@ -734,6 +869,7 @@
 
     // Reset state
     currentRoomId = '';
+    amIHost = false;
     isPainting = false;
     shapeStart = null;
     remoteStrokes.clear();
@@ -754,6 +890,7 @@
     // Clear member panel
     memberList.innerHTML = '';
     memberCount.textContent = '0 人';
+    wrMemberList.innerHTML = '';
     // Ensure modals are hidden
     roomClosedOverlay.hidden = true;
     confirmOverlay.hidden = true;
@@ -762,6 +899,7 @@
 
     // Switch screens
     gameEl.hidden = true;
+    waitingRoomEl.hidden = true;
     lobbyEl.hidden = false;
   }
 
