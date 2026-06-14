@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="網頁版多人連線你畫我猜遊戲" />
+  <title>你畫我猜 · Draw &amp; Guess</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;600;700;900&family=Inter:wght@300;400;500;600;700;800&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+
+  <!-- ══════════════ LOBBY ══════════════ -->
+  <div id="lobby">
+    <div class="lobby-card">
+      <img class="lobby-logo" src="/assets/home_page/pen.png" alt="Pen Logo" />
+      <h1>你畫我猜</h1>
+      <p class="lobby-sub">Draw &amp; Guess — 多人即時繪圖猜謎</p>
+      <!-- Join existing room -->
+      <div id="join-form">
+        <input id="room-input" type="text" placeholder="輸入 6 位數房號" maxlength="6" autocomplete="off"
+          inputmode="numeric" />
+        <button id="join-btn" class="cartoon-btn">加入房間</button>
+      </div>
+
+      <!-- Divider -->
+      <div class="lobby-divider"><span>或</span></div>
+
+      <!-- Create new room -->
+      <button id="create-btn" class="cartoon-btn">
+        <svg viewBox="0 0 24 24">
+          <path
+            d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 10h-4v4h-2v-4H7v-2h4V7h2v4h4v2z" />
+        </svg>
+        建立新房間
+      </button>
+
+      <p id="status-msg"></p>
+    </div>
+  </div>
+
+  <!-- ══════════════ GAME (full-window canvas) ══════════════ -->
+  <div id="game" hidden>
+
+    <!-- Canvas layers: draw → remote → preview (bottom to top) -->
+    <canvas id="draw-canvas"></canvas>
+    <canvas id="remote-canvas"></canvas>
+    <canvas id="preview-canvas"></canvas>
+
+    <!-- Floating HUD — top centre -->
+    <div id="hud-top">
+      <span class="hud-icon">🎨</span>
+      <span id="room-label">房間</span>
+      <span class="hud-sep">·</span>
+      <span id="status-msg-game">連線中</span>
+    </div>
+
+    <!-- Floating leave button — top left -->
+    <button id="leave-btn" title="離開房間">
+      <svg viewBox="0 0 24 24">
+        <path
+          d="M10.09 15.59L11.5 17l5-5-5-5-1.41 1.41L12.67 11H3v2h9.67l-2.58 2.59zM19 3H5c-1.11 0-2 .89-2 2v4h2V5h14v14H5v-4H3v4c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.11-.9-2-2-2z" />
+      </svg>
+      離開房間
+    </button>
+
+    <!-- Floating toolbar — bottom centre -->
+    <div id="toolbar">
+
+      <!-- ① Colour palette -->
+      <div class="tool-section" id="color-palette" role="group" aria-label="顏色">
+        <button class="color-swatch selected" data-color="#1a1a2e" title="黑色" style="background:#1a1a2e;"></button>
+        <button class="color-swatch" data-color="#e63946" title="紅色" style="background:#e63946;"></button>
+        <button class="color-swatch" data-color="#f4c542" title="黃色" style="background:#f4c542;"></button>
+        <button class="color-swatch" data-color="#2196f3" title="藍色" style="background:#2196f3;"></button>
+        <button class="color-swatch" data-color="#43a047" title="綠色" style="background:#43a047;"></button>
+      </div>
+
+      <div class="tool-divider"></div>
+
+      <!-- ② Drawing tools -->
+      <div class="tool-section" id="tool-palette" role="group" aria-label="工具">
+
+        <!-- Pen -->
+        <button class="tool-btn selected" id="tool-pen" data-tool="pen" title="畫筆">
+          <svg viewBox="0 0 24 24">
+            <path
+              d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
+          </svg>
+        </button>
+
+        <!-- Eraser -->
+        <button class="tool-btn" id="tool-eraser" data-tool="eraser" title="橡皮擦">
+          <svg viewBox="0 0 24 24">
+            <path
+              d="M15.14 3c-.51 0-1.02.2-1.41.59L2.59 14.73c-.78.77-.78 2.04 0 2.83L5.03 20H21v-2h-7.78l7.19-7.19c.78-.78.78-2.05 0-2.83l-3.86-3.86c-.39-.39-.9-.59-1.41-.59zm.01 1.99l3.86 3.86-4.19 4.19-3.86-3.86 4.19-4.19zM7.21 14.21l3.86 3.86-1.61 1.57-3.77-3.77 1.52-1.66z" />
+          </svg>
+        </button>
+
+        <!-- Rectangle -->
+        <button class="tool-btn" id="tool-rect" data-tool="rect" title="矩形">
+          <svg viewBox="0 0 24 24">
+            <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z" />
+          </svg>
+        </button>
+
+        <!-- Triangle -->
+        <button class="tool-btn" id="tool-triangle" data-tool="triangle" title="三角形">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 2L2 21h20L12 2zm0 3.43L19.53 19H4.47L12 5.43z" />
+          </svg>
+        </button>
+
+        <!-- Circle -->
+        <button class="tool-btn" id="tool-circle" data-tool="circle" title="圓形">
+          <svg viewBox="0 0 24 24">
+            <path
+              d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="tool-divider"></div>
+
+      <!-- ③ Line width -->
+      <div class="tool-section" id="width-section">
+        <svg class="width-icon" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="3" />
+        </svg>
+        <input id="line-width" type="range" min="1" max="24" value="3" title="筆寬" />
+        <svg class="width-icon" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="7" />
+        </svg>
+      </div>
+
+      <div class="tool-divider"></div>
+
+      <!-- ④ Clear -->
+      <div class="tool-section">
+        <button id="clear-btn" class="action-btn" title="清空畫布">
+          <svg viewBox="0 0 24 24">
+            <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
+          </svg>
+          清空
+        </button>
+      </div>
+
+    </div><!-- /#toolbar -->
+  </div><!-- /#game -->
+
+  <!-- Confirmation modal -->
+  <div id="confirm-overlay" hidden>
+    <div id="confirm-box">
+      <div class="confirm-icon">🚪</div>
+      <h3>離開房間？</h3>
+      <p>確定要離開當前房間嗎？<br />畫布內容將不會保留。</p>
+      <div class="confirm-actions">
+        <button id="confirm-cancel">取消</button>
+        <button id="confirm-ok">確認離開</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+
+</html>

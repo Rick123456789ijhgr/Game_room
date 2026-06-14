@@ -1,0 +1,365 @@
+/* =====================================================
+   style.css — Draw & Guess · Full-window canvas UI
+   ===================================================== */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  font-family: 'Inter', 'Noto Sans TC', system-ui, -apple-system, sans-serif;
+}
+
+/* ══════════════════════════════════════════════════════
+   LOBBY (Cute Cartoon / Neo-brutalism Style)
+══════════════════════════════════════════════════════ */
+#lobby {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background-color: #ffffff;
+}
+
+.lobby-card {
+  background: #ffffff;
+  border: 3px solid #111111;
+  border-radius: 32px;
+  padding: 48px 56px;
+  text-align: center;
+  color: #111111;
+  max-width: 460px;
+  width: 90%;
+  box-shadow: 6px 6px 0px #111111;
+  position: relative;
+  overflow: hidden;
+}
+
+.lobby-logo {
+  width: 80px;
+  height: auto;
+  margin: 0 auto 20px;
+  display: block;
+  filter: drop-shadow(4px 4px 0px rgba(0,0,0,0.15));
+}
+
+.lobby-card h1 {
+  font-size: 2.8rem;
+  font-weight: 900;
+  letter-spacing: 2px;
+  margin-bottom: 12px;
+  color: #111111;
+  text-shadow: 4px 4px 0px #ffd93d;
+}
+
+.lobby-sub {
+  color: #111111;
+  font-size: 1.05rem;
+  font-weight: 800;
+  margin-bottom: 36px;
+  background: #e1f5fe; /* Soft blue */
+  padding: 8px 16px;
+  border-radius: 999px;
+  display: inline-block;
+  border: 2px solid #111111;
+  box-shadow: 2px 2px 0px #111111;
+}
+
+#join-form {
+  display: flex;
+  flex-direction: column; /* Stack input and button for better chunky sizing */
+  gap: 16px;
+}
+
+#room-input {
+  width: 100%;
+  padding: 16px 24px;
+  border: 3px solid #111111;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #111111;
+  font-size: 1.4rem;
+  font-weight: 800;
+  letter-spacing: 4px;
+  text-align: center;
+  outline: none;
+  box-shadow: inset 2px 2px 0px rgba(0,0,0,0.05);
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+#room-input::placeholder {
+  color: #aaaaaa;
+  letter-spacing: 1px;
+  font-size: 1rem;
+  font-weight: 600;
+}
+#room-input:focus {
+  transform: translateY(-2px);
+  box-shadow: 4px 4px 0px #111111;
+}
+
+/* Base style for cartoon buttons */
+.cartoon-btn {
+  padding: 16px 24px;
+  border: 3px solid #111111;
+  border-radius: 999px;
+  font-size: 1.1rem;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 4px 4px 0px #111111;
+  transition: transform 0.1s, box-shadow 0.1s, background-color 0.2s, color 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.cartoon-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 6px 6px 0px #111111;
+}
+.cartoon-btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0px #111111;
+}
+.cartoon-btn:disabled {
+  background: #dddddd !important;
+  color: #888888 !important;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: 4px 4px 0px #111111;
+}
+
+#join-btn {
+  background: #ffd93d; /* Vibrant yellow */
+  color: #111111;
+}
+#join-btn:hover:not(:disabled) { background: #ffec8b; }
+
+/* ── Lobby divider ─────────────────────────────────── */
+.lobby-divider {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 24px 0;
+  color: #111111;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+.lobby-divider::before,
+.lobby-divider::after {
+  content: '';
+  flex: 1;
+  height: 3px;
+  background: #111111;
+  border-radius: 2px;
+}
+
+/* ── Create Room button ────────────────────────────── */
+#create-btn {
+  width: 100%;
+  background: #4dacff; /* Bright baby blue */
+  color: #111111;
+}
+#create-btn svg { width: 22px; height: 22px; fill: #111111; flex-shrink: 0; }
+#create-btn:hover:not(:disabled) { background: #7cc4ff; }
+
+#status-msg {
+  margin-top: 20px;
+  color: #111111;
+  font-size: 0.95rem;
+  font-weight: 700;
+  min-height: 1.3em;
+  background: #ffeeee;
+  border: 2px dashed #111111;
+  padding: 4px 8px;
+  border-radius: 12px;
+  display: inline-block;
+  opacity: 0; /* Hidden by default, js can toggle this or we just use textContent */
+}
+#status-msg:not(:empty) {
+  opacity: 1;
+}
+
+/* ══════════════════════════════════════════════════════
+   GAME — full-window canvas (Cartoon overlay style)
+══════════════════════════════════════════════════════ */
+#game { position: fixed; inset: 0; background: #ffffff; }
+
+#draw-canvas, #remote-canvas, #preview-canvas {
+  position: absolute; inset: 0; display: block;
+}
+#remote-canvas, #preview-canvas { pointer-events: none; }
+
+/* ── Floating HUD (top centre) ───────────────────────── */
+#hud-top {
+  position: absolute;
+  top: 24px; left: 50%;
+  transform: translateX(-50%);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 24px;
+  background: #ffffff;
+  border: 3px solid #111111;
+  border-radius: 999px;
+  color: #111111;
+  font-size: 1.05rem;
+  font-weight: 800;
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: 4px 4px 0px #111111;
+}
+.hud-icon { font-size: 1.3rem; }
+#room-label { font-weight: 900; letter-spacing: 1px; color: #111111; }
+.hud-sep { color: #dddddd; }
+#status-msg-game { color: #555555; font-size: 0.95rem; }
+
+/* ── Leave Room button (top-left) ─────────────────── */
+#leave-btn {
+  position: absolute;
+  top: 24px; left: 24px;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px 10px 14px;
+  background: #ffffff;
+  border: 3px solid #111111;
+  border-radius: 999px;
+  color: #111111;
+  font-size: 0.95rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.1s, box-shadow 0.1s, background-color 0.2s;
+  box-shadow: 4px 4px 0px #111111;
+}
+#leave-btn svg { width: 18px; height: 18px; fill: #111111; flex-shrink: 0; transition: fill .2s; }
+#leave-btn:hover { background: #ff6b6b; color: #ffffff; }
+#leave-btn:hover svg { fill: #ffffff; }
+#leave-btn:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0px #111111; }
+
+/* ── Floating toolbar (bottom centre) ───────────────── */
+#toolbar {
+  position: absolute;
+  bottom: 24px; left: 50%;
+  transform: translateX(-50%);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #ffffff;
+  border: 3px solid #111111;
+  border-radius: 999px;
+  box-shadow: 4px 4px 0px #111111;
+  white-space: nowrap;
+  max-width: 95vw;
+  overflow-x: auto;
+  /* Hide scrollbar for a cleaner look but keep scrollability */
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+#toolbar::-webkit-scrollbar { display: none; }
+
+.tool-section { display: flex; align-items: center; gap: 6px; }
+.tool-divider { width: 3px; height: 28px; background: #111111; margin: 0 2px; border-radius: 2px; flex-shrink: 0; }
+
+.color-swatch {
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  border: 2px solid #111111;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform .1s, box-shadow .1s;
+  box-shadow: 2px 2px 0px rgba(0,0,0,0.2);
+  margin: 0 3px; /* Add margin to prevent selection rings from overlapping */
+}
+.color-swatch:hover { transform: scale(1.15) translateY(-2px); }
+.color-swatch.selected { box-shadow: 0 0 0 2px #ffffff, 0 0 0 5px #111111; transform: scale(1.1); z-index: 2; }
+
+.tool-btn {
+  width: 38px; height: 38px;
+  display: flex; align-items: center; justify-content: center;
+  border: 3px solid transparent; border-radius: 12px;
+  background: transparent; cursor: pointer; flex-shrink: 0;
+  transition: background .15s, border-color .15s, transform .1s;
+}
+.tool-btn svg { width: 18px; height: 18px; fill: #555; transition: fill .15s; }
+.tool-btn:hover { background: #f0f0f0; border-color: #dddddd; }
+.tool-btn:active { transform: scale(.9); }
+.tool-btn.selected { background: #ffd93d; border-color: #111111; box-shadow: inset 2px 2px 0px rgba(0,0,0,0.1); }
+.tool-btn.selected svg { fill: #111111; }
+
+#width-section { gap: 8px; }
+.width-icon { width: 14px; height: 14px; fill: #111111; flex-shrink: 0; }
+#line-width { width: 70px; accent-color: #ff6b6b; cursor: pointer; }
+
+.action-btn {
+  display: flex; align-items: center; gap: 4px;
+  padding: 8px 14px; border: 3px solid #111111; border-radius: 12px;
+  background: #ff6b6b;
+  color: #fff; font-size: 0.9rem; font-weight: 800;
+  cursor: pointer; flex-shrink: 0;
+  transition: transform .1s, box-shadow .1s;
+  box-shadow: 3px 3px 0px #111111;
+}
+.action-btn svg { width: 14px; height: 14px; fill: #fff; flex-shrink: 0; }
+.action-btn:hover { background: #ff8787; transform: translateY(-2px); box-shadow: 5px 5px 0px #111111; }
+.action-btn:active { transform: translate(2px,2px); box-shadow: 1px 1px 0px #111111; }
+
+/* ══════════════════════════════════════════════════════
+   CONFIRMATION MODAL (Cartoon style)
+══════════════════════════════════════════════════════ */
+#confirm-overlay {
+  position: fixed; inset: 0; z-index: 999;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(255, 249, 230, 0.85); /* Warm translucent backdrop */
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+#confirm-overlay[hidden] { display: none; }
+
+#confirm-box {
+  background: #ffffff;
+  border: 5px solid #111111;
+  border-radius: 32px;
+  padding: 44px 48px;
+  text-align: center;
+  max-width: 400px; width: 90%;
+  box-shadow: 12px 12px 0px #111111;
+  animation: confirmIn .3s cubic-bezier(0.175, 0.885, 0.32, 1.275); /* Bouncy animation */
+}
+@keyframes confirmIn {
+  from { opacity: 0; transform: scale(.7) translateY(20px); }
+  to   { opacity: 1; transform: scale(1)  translateY(0); }
+}
+
+.confirm-icon { font-size: 4rem; margin-bottom: 16px; line-height: 1; filter: drop-shadow(3px 3px 0px rgba(0,0,0,0.15)); }
+#confirm-box h3 { font-size: 1.8rem; font-weight: 900; color: #111111; margin-bottom: 12px; }
+#confirm-box p { color: #555555; font-size: 1.05rem; font-weight: 700; line-height: 1.6; margin-bottom: 32px; }
+
+.confirm-actions { display: flex; gap: 16px; }
+
+#confirm-cancel {
+  flex: 1; padding: 16px;
+  border: 3px solid #111111; border-radius: 16px;
+  background: #ffffff; color: #111111;
+  font-size: 1.1rem; font-weight: 800; cursor: pointer;
+  box-shadow: 4px 4px 0px #111111;
+  transition: transform .1s, box-shadow .1s;
+}
+#confirm-cancel:hover { background: #f0f0f0; transform: translateY(-2px); box-shadow: 6px 6px 0px #111111; }
+#confirm-cancel:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0px #111111; }
+
+#confirm-ok {
+  flex: 1; padding: 16px;
+  border: 3px solid #111111; border-radius: 16px;
+  background: #ff6b6b;
+  color: #fff; font-size: 1.1rem; font-weight: 900; cursor: pointer;
+  box-shadow: 4px 4px 0px #111111;
+  transition: transform .1s, box-shadow .1s;
+}
+#confirm-ok:hover { background: #ff8787; transform: translateY(-2px); box-shadow: 6px 6px 0px #111111; }
+#confirm-ok:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0px #111111; }
+
