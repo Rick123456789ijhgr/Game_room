@@ -18,10 +18,37 @@
 
   <!-- ══════════════ LOBBY ══════════════ -->
   <div id="lobby">
+    <!-- Floating background shapes -->
+    <div class="bg-shape shape-1"></div>
+    <div class="bg-shape shape-2"></div>
+    <div class="bg-shape shape-3"></div>
+    <div class="bg-shape shape-4"></div>
+    <div class="bg-shape shape-5"></div>
+    <div class="bg-shape shape-6"></div>
+    <div class="bg-shape shape-7"></div>
+    <div class="bg-shape shape-8"></div>
+    <div class="bg-shape shape-9"></div>
+    <div class="bg-shape shape-10"></div>
+    <div class="bg-shape shape-11"></div>
+    <div class="bg-shape shape-12"></div>
+
     <div class="lobby-card">
-      <img class="lobby-logo" src="/assets/home_page/pen.png" alt="Pen Logo" />
-      <h1>你畫我猜</h1>
-      <p class="lobby-sub">Draw &amp; Guess — 多人即時繪圖猜謎</p>
+      <!-- Header Banner -->
+      <div class="lobby-banner">
+        <img class="lobby-logo" src="/assets/img/home_page/pen.png" alt="Pen Logo" />
+        <div class="lobby-title-group">
+          <h1>
+            <span class="title-char" style="color:#ff6b6b; transform: rotate(-3deg) translateY(2px)">你</span>
+            <span class="title-char" style="color:#4dacff; transform: rotate(2deg) translateY(-2px)">畫</span>
+            <span class="title-char" style="color:#ffd93d; transform: rotate(-2deg) translateY(1px)">我</span>
+            <span class="title-char" style="color:#43a047; transform: rotate(3deg) translateY(-2px)">猜</span>
+          </h1>
+          <div class="lobby-sub-wrap">
+            <div class="lobby-sub">Draw &amp; Guess</div>
+            <div class="lobby-sub-desc">多人即時繪圖猜謎</div>
+          </div>
+        </div>
+      </div>
 
       <!-- Nickname + Join section -->
       <div id="lobby-main">
@@ -29,8 +56,7 @@
         <!-- Left: Nickname badge -->
         <div class="badge-card">
           <div class="badge-header">
-            <span class="badge-logo">🎨</span>
-            <span class="badge-title">PLAYER ID</span>
+            <span class="badge-title">玩家名稱</span>
           </div>
           <div class="badge-avatar" id="badge-avatar">?</div>
           <input id="nick-input" type="text" placeholder="輸入暱稱" maxlength="10" autocomplete="off" />
@@ -49,7 +75,8 @@
 
           <button id="create-btn" class="cartoon-btn">
             <svg viewBox="0 0 24 24">
-              <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 10h-4v4h-2v-4H7v-2h4V7h2v4h4v2z" />
+              <path
+                d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 10h-4v4h-2v-4H7v-2h4V7h2v4h4v2z" />
             </svg>
             建立新房間
           </button>
@@ -76,13 +103,34 @@
       <span id="status-msg-game">連線中</span>
     </div>
 
-    <!-- Floating member list — top right -->
-    <div id="member-panel">
-      <div id="member-panel-header">
-        <span>👥</span>
-        <span id="member-count">0 人</span>
+    <!-- Unified Sidebar Panel — right side -->
+    <div id="sidebar-panel">
+      
+      <!-- Member Section -->
+      <div id="member-section">
+        <div class="sidebar-header" id="member-panel-header" style="cursor: pointer;" title="點擊收起/展開名單">
+          <span>👥</span>
+          <span id="member-count">0 人</span>
+          <span id="member-toggle" style="margin-left:auto; font-size: 0.8rem; transition: transform 0.2s;">▼</span>
+        </div>
+        <ul id="member-list"></ul>
       </div>
-      <ul id="member-list"></ul>
+
+      <div class="sidebar-divider"></div>
+
+      <!-- Chat Section -->
+      <div id="chat-section">
+        <div class="sidebar-header" id="chat-header">
+          <span>💬</span>
+          <span>聊天室</span>
+        </div>
+        <div id="chat-messages"></div>
+        <div id="chat-input-row">
+          <input id="chat-input" type="text" placeholder="輸入訊息…" maxlength="80" autocomplete="off" />
+          <button id="chat-send">傳送</button>
+        </div>
+      </div>
+
     </div>
 
     <!-- Floating leave button — top left -->
@@ -94,11 +142,10 @@
       離開房間
     </button>
 
-    <!-- Floating toolbar — bottom centre -->
-    <div id="toolbar">
-
+    <!-- Floating toolbar — left side (Vertical) -->
+    <div id="toolbar-left">
       <!-- ① Colour palette -->
-      <div class="tool-section" id="color-palette" role="group" aria-label="顏色">
+      <div class="tool-section" id="color-palette-left" role="group" aria-label="顏色">
         <button class="color-swatch selected" data-color="#1a1a2e" title="黑色" style="background:#1a1a2e;"></button>
         <button class="color-swatch" data-color="#e63946" title="紅色" style="background:#e63946;"></button>
         <button class="color-swatch" data-color="#f4c542" title="黃色" style="background:#f4c542;"></button>
@@ -109,73 +156,42 @@
       <div class="tool-divider"></div>
 
       <!-- ② Drawing tools -->
-      <div class="tool-section" id="tool-palette" role="group" aria-label="工具">
-
-        <!-- Pen -->
-        <button class="tool-btn selected" id="tool-pen" data-tool="pen" title="畫筆">
-          <svg viewBox="0 0 24 24">
-            <path
-              d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
-          </svg>
+      <div class="tool-section" id="tool-palette-left" role="group" aria-label="工具">
+        <button class="tool-btn selected" id="tool-pen-left" data-tool="pen" title="畫筆">
+          <svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" /></svg>
         </button>
-
-        <!-- Eraser -->
-        <button class="tool-btn" id="tool-eraser" data-tool="eraser" title="橡皮擦">
-          <svg viewBox="0 0 24 24">
-            <path
-              d="M15.14 3c-.51 0-1.02.2-1.41.59L2.59 14.73c-.78.77-.78 2.04 0 2.83L5.03 20H21v-2h-7.78l7.19-7.19c.78-.78.78-2.05 0-2.83l-3.86-3.86c-.39-.39-.9-.59-1.41-.59zm.01 1.99l3.86 3.86-4.19 4.19-3.86-3.86 4.19-4.19zM7.21 14.21l3.86 3.86-1.61 1.57-3.77-3.77 1.52-1.66z" />
-          </svg>
-        </button>
-
-        <!-- Rectangle -->
-        <button class="tool-btn" id="tool-rect" data-tool="rect" title="矩形">
-          <svg viewBox="0 0 24 24">
-            <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z" />
-          </svg>
-        </button>
-
-        <!-- Triangle -->
-        <button class="tool-btn" id="tool-triangle" data-tool="triangle" title="三角形">
-          <svg viewBox="0 0 24 24">
-            <path d="M12 2L2 21h20L12 2zm0 3.43L19.53 19H4.47L12 5.43z" />
-          </svg>
-        </button>
-
-        <!-- Circle -->
-        <button class="tool-btn" id="tool-circle" data-tool="circle" title="圓形">
-          <svg viewBox="0 0 24 24">
-            <path
-              d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z" />
-          </svg>
+        <button class="tool-btn" id="tool-eraser-left" data-tool="eraser" title="橡皮擦">
+          <svg viewBox="0 0 24 24"><path d="M15.14 3c-.51 0-1.02.2-1.41.59L2.59 14.73c-.78.77-.78 2.04 0 2.83L5.03 20H21v-2h-7.78l7.19-7.19c.78-.78.78-2.05 0-2.83l-3.86-3.86c-.39-.39-.9-.59-1.41-.59zm.01 1.99l3.86 3.86-4.19 4.19-3.86-3.86 4.19-4.19zM7.21 14.21l3.86 3.86-1.61 1.57-3.77-3.77 1.52-1.66z" /></svg>
         </button>
       </div>
 
       <div class="tool-divider"></div>
 
       <!-- ③ Line width -->
-      <div class="tool-section" id="width-section">
-        <svg class="width-icon" viewBox="0 0 24 24">
-          <circle cx="12" cy="12" r="3" />
-        </svg>
-        <input id="line-width" type="range" min="1" max="24" value="3" title="筆寬" />
-        <svg class="width-icon" viewBox="0 0 24 24">
-          <circle cx="12" cy="12" r="7" />
-        </svg>
+      <div class="tool-section" id="width-section-left">
+        <svg class="width-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7" /></svg>
+        <input id="line-width-left" type="range" min="1" max="24" value="3" title="筆寬" />
+        <svg class="width-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /></svg>
       </div>
 
       <div class="tool-divider"></div>
 
       <!-- ④ Clear -->
       <div class="tool-section">
-        <button id="clear-btn" class="action-btn" title="清空畫布">
-          <svg viewBox="0 0 24 24">
-            <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
-          </svg>
-          清空
+        <button id="clear-btn-left" class="action-btn" title="清空畫布" style="padding: 10px; border-radius: 12px;">
+          <svg viewBox="0 0 24 24" style="margin: 0;"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" /></svg>
         </button>
       </div>
+    </div>
 
-    </div><!-- /#toolbar -->
+    <!-- Answer Input — bottom centre -->
+    <div id="answer-panel">
+      <input id="answer-input" type="text" placeholder="輸入答案猜測…" autocomplete="off" maxlength="30" />
+      <button id="answer-send">送出</button>
+    </div><!-- /#answer-panel -->
+
+    <!-- Chat panel was moved into sidebar-panel above -->
+
   </div><!-- /#game -->
 
   <!-- Confirmation modal -->

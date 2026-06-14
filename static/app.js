@@ -7,32 +7,39 @@
   'use strict';
 
   // ── DOM refs ─────────────────────────────────────────────
-  const lobbyEl        = document.getElementById('lobby');
-  const gameEl         = document.getElementById('game');
-  const roomInput      = document.getElementById('room-input');
-  const nickInput      = document.getElementById('nick-input');
-  const badgeAvatar    = document.getElementById('badge-avatar');
-  const joinBtn        = document.getElementById('join-btn');
-  const createBtn      = document.getElementById('create-btn');
-  const leaveBtn       = document.getElementById('leave-btn');
+  const lobbyEl = document.getElementById('lobby');
+  const gameEl = document.getElementById('game');
+  const roomInput = document.getElementById('room-input');
+  const nickInput = document.getElementById('nick-input');
+  const badgeAvatar = document.getElementById('badge-avatar');
+  const joinBtn = document.getElementById('join-btn');
+  const createBtn = document.getElementById('create-btn');
+  const leaveBtn = document.getElementById('leave-btn');
   const confirmOverlay = document.getElementById('confirm-overlay');
-  const confirmCancel  = document.getElementById('confirm-cancel');
-  const confirmOk      = document.getElementById('confirm-ok');
-  const statusMsg      = document.getElementById('status-msg');
-  const statusMsgGame  = document.getElementById('status-msg-game');
-  const roomLabel      = document.getElementById('room-label');
-  const memberCount    = document.getElementById('member-count');
-  const memberList     = document.getElementById('member-list');
+  const confirmCancel = document.getElementById('confirm-cancel');
+  const confirmOk = document.getElementById('confirm-ok');
+  const statusMsg = document.getElementById('status-msg');
+  const statusMsgGame = document.getElementById('status-msg-game');
+  const roomLabel = document.getElementById('room-label');
+  const memberCount = document.getElementById('member-count');
+  const memberList = document.getElementById('member-list');
+  const memberToggle = document.getElementById('member-toggle');
+  const memberSection = document.getElementById('member-section');
+  const sidebarDivider = document.querySelector('.sidebar-divider');
   const roomClosedOverlay = document.getElementById('room-closed-overlay');
-  const roomClosedOk   = document.getElementById('room-closed-ok');
-  const localCanvas    = document.getElementById('draw-canvas');
-  const localCtx       = localCanvas.getContext('2d');
-  const remoteCanvas   = document.getElementById('remote-canvas');
-  const remoteCtx      = remoteCanvas.getContext('2d');
-  const previewCanvas  = document.getElementById('preview-canvas');
-  const previewCtx     = previewCanvas.getContext('2d');
-  const lineWidthInput = document.getElementById('line-width');
-  const clearBtn       = document.getElementById('clear-btn');
+  const roomClosedOk = document.getElementById('room-closed-ok');
+  const chatPanel = document.getElementById('chat-panel');
+  const chatMessages = document.getElementById('chat-messages');
+  const chatInput = document.getElementById('chat-input');
+  const chatSend = document.getElementById('chat-send');
+  const localCanvas = document.getElementById('draw-canvas');
+  const localCtx = localCanvas.getContext('2d');
+  const remoteCanvas = document.getElementById('remote-canvas');
+  const remoteCtx = remoteCanvas.getContext('2d');
+  const previewCanvas = document.getElementById('preview-canvas');
+  const previewCtx = previewCanvas.getContext('2d');
+  const lineWidthInputs = [document.getElementById('line-width'), document.getElementById('line-width-left')];
+  const clearBtns = [document.getElementById('clear-btn'), document.getElementById('clear-btn-left')];
 
   // ── Nickname state ────────────────────────────────────────────
   let myNickname = '匿名玩家';
@@ -43,13 +50,38 @@
     badgeAvatar.textContent = val ? val[0].toUpperCase() : '?';
   });
 
+  // ── Sidebar toggling ──────────────────────────────────────
+  document.getElementById('member-panel-header').addEventListener('click', () => {
+    const isCollapsed = memberSection.classList.contains('collapsed');
+    
+    // Hide scrollbar during animation
+    memberList.style.overflowY = 'hidden';
+
+    if (isCollapsed) {
+      memberSection.classList.remove('collapsed');
+      sidebarDivider.style.display = "block";
+      memberToggle.style.transform = "rotate(0deg)";
+    } else {
+      memberSection.classList.add('collapsed');
+      sidebarDivider.style.display = "none";
+      memberToggle.style.transform = "rotate(-90deg)";
+    }
+
+    // Restore scrollbar only after expansion finishes
+    setTimeout(() => {
+      if (!memberSection.classList.contains('collapsed')) {
+        memberList.style.overflowY = 'auto';
+      }
+    }, 300); // matches the 0.3s CSS transition duration
+  });
+
   // ── Client identity ───────────────────────────────────────
   const clientId = Math.random().toString(36).slice(2, 10);
 
   // ── Tool / colour state ───────────────────────────────────
-  let currentTool  = 'pen';
+  let currentTool = 'pen';
   let currentColor = '#1a1a2e';
-  let lineWidth    = 3;
+  let lineWidth = 3;
 
   // ── Local drawing state ───────────────────────────────────
   /**
@@ -63,8 +95,8 @@
     action: 'idle', x: 0, y: 0, prevX: 0, prevY: 0,
     tool: 'pen', color: '#1a1a2e', lineWidth: 3,
   };
-  let isPainting    = false;
-  let shapeStart    = null;  // { x, y } for shape tools
+  let isPainting = false;
+  let shapeStart = null;  // { x, y } for shape tools
   let currentRoomId = '';    // set when player_joined is received
 
   // ── Remote stroke state (per peer) ───────────────────────
@@ -80,11 +112,11 @@
     const H = window.innerHeight;
 
     // Preserve content from draw and remote canvases before resizing
-    const localImg  = localCtx.getImageData(0, 0, localCanvas.width,  localCanvas.height);
+    const localImg = localCtx.getImageData(0, 0, localCanvas.width, localCanvas.height);
     const remoteImg = remoteCtx.getImageData(0, 0, remoteCanvas.width, remoteCanvas.height);
 
     [localCanvas, remoteCanvas, previewCanvas].forEach(c => {
-      c.width  = W;
+      c.width = W;
       c.height = H;
     });
 
@@ -98,7 +130,7 @@
     const W = window.innerWidth;
     const H = window.innerHeight;
     [localCanvas, remoteCanvas, previewCanvas].forEach(c => {
-      c.width  = W;
+      c.width = W;
       c.height = H;
     });
   }
@@ -108,22 +140,22 @@
 
   // ── Coordinate helper ─────────────────────────────────────
   function getPos(canvas, clientX, clientY) {
-    const rect   = canvas.getBoundingClientRect();
-    const scaleX = canvas.width  / rect.width;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
     return {
       x: (clientX - rect.left) * scaleX,
-      y: (clientY - rect.top)  * scaleY,
+      y: (clientY - rect.top) * scaleY,
     };
   }
 
   // ── Apply pen/eraser style to a context ──────────────────
   function applyPenStyle(ctx, color, lw, isEraser) {
     ctx.strokeStyle = isEraser ? '#ffffff' : color;
-    ctx.fillStyle   = isEraser ? '#ffffff' : color;
-    ctx.lineWidth   = isEraser ? Math.max(lw * 5, 20) : lw;
-    ctx.lineCap     = 'round';
-    ctx.lineJoin    = 'round';
+    ctx.fillStyle = isEraser ? '#ffffff' : color;
+    ctx.lineWidth = isEraser ? Math.max(lw * 5, 20) : lw;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
     ctx.globalCompositeOperation = 'source-over';
   }
 
@@ -131,9 +163,9 @@
   function drawShape(ctx, tool, sx, sy, ex, ey, color, lw) {
     ctx.save();
     ctx.strokeStyle = color;
-    ctx.lineWidth   = lw;
-    ctx.lineCap     = 'round';
-    ctx.lineJoin    = 'round';
+    ctx.lineWidth = lw;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
     ctx.beginPath();
 
     switch (tool) {
@@ -186,10 +218,10 @@
   function continueStroke(x, y) {
     if (!isPainting) return;
 
-    stroke.prevX  = stroke.x;
-    stroke.prevY  = stroke.y;
-    stroke.x      = x;
-    stroke.y      = y;
+    stroke.prevX = stroke.x;
+    stroke.prevY = stroke.y;
+    stroke.x = x;
+    stroke.y = y;
     stroke.action = 'draw';
 
     const midX = (stroke.prevX + x) / 2;
@@ -204,7 +236,7 @@
 
   function endStroke() {
     if (!isPainting) return;
-    isPainting    = false;
+    isPainting = false;
     stroke.action = 'end';
     localCtx.beginPath();
     sendDraw();
@@ -241,22 +273,22 @@
 
   function onDown(x, y) {
     if (isFreeDraw()) startStroke(x, y);
-    else              startShape(x, y);
+    else startShape(x, y);
   }
 
   function onMove(x, y) {
     if (isFreeDraw()) continueStroke(x, y);
-    else              previewShape(x, y);
+    else previewShape(x, y);
   }
 
   function onUp(x, y) {
     if (isFreeDraw()) endStroke();
-    else              finaliseShape(x, y);
+    else finaliseShape(x, y);
   }
 
   function onCancel() {
     if (isFreeDraw()) endStroke();
-    else              cancelShape();
+    else cancelShape();
   }
 
   // ── Mouse events ──────────────────────────────────────────
@@ -336,14 +368,15 @@
       case 'room_created':
         console.log(`[WS] room_created room="${msg.room_id}" ✅`);
         showGame(msg.room_id);
+        appendSystemMsg('房間已建立，等待其他玩家加入…');
         break;
 
       case 'player_joined': {
         const nick = msg.data && msg.data.nickname ? msg.data.nickname : '匿名玩家';
         console.log(`[WS] player_joined room="${msg.room_id}" nickname="${nick}" ✅`);
-        // Only enter game if we're not already there (i.e. it's our own join)
         if (gameEl.hidden) showGame(msg.room_id);
         setGameStatus(`${nick} 加入了房間`);
+        appendSystemMsg(`🟡 ${nick} 加入了房間`);
         break;
       }
 
@@ -353,7 +386,6 @@
 
       case 'room_closed':
         console.log(`[WS] room_closed for room "${msg.room_id}"`);
-        // Close WS cleanly then show the notification modal
         if (ws) {
           ws.onclose = null;
           ws.close();
@@ -361,6 +393,13 @@
         }
         roomClosedOverlay.hidden = false;
         break;
+
+      case 'chat': {
+        const d = msg.data || {};
+        const isSelf = d.nickname === myNickname;
+        appendChatMsg(d.nickname, d.text, isSelf);
+        break;
+      }
 
       case 'draw':
         drawRemote(msg);
@@ -483,7 +522,7 @@
       const isSelf = m.nickname === myNickname;
       let badgesHtml = '';
       if (m.is_host) badgesHtml += '<span class="member-host-badge">👑 房主</span>';
-      if (isSelf)    badgesHtml += '<span class="member-self-badge">我</span>';
+      if (isSelf) badgesHtml += '<span class="member-self-badge">我</span>';
       li.innerHTML = `
         <div class="member-avatar">${avatar}</div>
         <span class="member-name">${m.nickname}</span>
@@ -493,19 +532,65 @@
     });
   }
 
+  // ── Chat helpers ──────────────────────────────────────────
+  function appendChatMsg(nickname, text, isSelf) {
+    if (!text) return;
+    const div = document.createElement('div');
+    div.className = 'chat-msg' + (isSelf ? ' self' : '');
+    const avatar = nickname ? nickname[0].toUpperCase() : '?';
+    const nameClass = 'chat-msg-name' + (isSelf ? ' self' : '');
+    div.innerHTML = `
+      <div class="chat-msg-header">
+        <div class="chat-msg-avatar">${avatar}</div>
+        <span class="${nameClass}">${escapeHtml(nickname)}</span>
+      </div>
+      <div class="chat-msg-bubble">${escapeHtml(text)}</div>
+    `;
+    chatMessages.appendChild(div);
+    // Auto-scroll to bottom
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+
+  function appendSystemMsg(text) {
+    const div = document.createElement('div');
+    div.className = 'chat-system-msg';
+    div.textContent = text;
+    chatMessages.appendChild(div);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function sendChat() {
+    const text = chatInput.value.trim();
+    if (!text || !currentRoomId) return;
+    sendJSON({ event: 'chat', room_id: currentRoomId, data: { text } });
+    chatInput.value = '';
+    chatInput.focus();
+  }
+
+  chatSend.addEventListener('click', sendChat);
+  chatInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') sendChat();
+  });
+
   // ── Generic helpers ───────────────────────────────────────
   function sendJSON(obj) {
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
   }
 
-  function setStatus(text)     { statusMsg.textContent     = text; }
+  function setStatus(text) { statusMsg.textContent = text; }
   function setGameStatus(text) { statusMsgGame.textContent = text; }
 
   function showGame(roomId) {
     currentRoomId = roomId;
     resizeCanvases();
     lobbyEl.hidden = true;
-    gameEl.hidden  = false;
+    gameEl.hidden = false;
     roomLabel.textContent = `房間：${roomId}`;
     setGameStatus('已連線');
   }
@@ -542,22 +627,32 @@
   });
 
   // ── Toolbar: line width ───────────────────────────────────
-  lineWidthInput.addEventListener('input', () => {
-    lineWidth = parseInt(lineWidthInput.value, 10);
+  lineWidthInputs.forEach(input => {
+    if (!input) return;
+    input.addEventListener('input', (e) => {
+      lineWidth = parseInt(e.target.value, 10);
+      // Sync the other slider
+      lineWidthInputs.forEach(other => {
+        if (other && other !== e.target) other.value = e.target.value;
+      });
+    });
   });
 
   // ── Toolbar: clear button ─────────────────────────────────
-  clearBtn.addEventListener('click', () => {
-    localCtx.clearRect(0, 0, localCanvas.width, localCanvas.height);
-    previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
-    sendClear();
+  clearBtns.forEach(btn => {
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      localCtx.clearRect(0, 0, localCanvas.width, localCanvas.height);
+      previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+      sendClear();
+    });
   });
 
   // ── Lobby UI ──────────────────────────────────────────────
 
   /** Disable / enable all lobby buttons together */
   function setLobbyBusy(busy) {
-    joinBtn.disabled   = busy;
+    joinBtn.disabled = busy;
     createBtn.disabled = busy;
     roomInput.disabled = busy;
   }
@@ -639,15 +734,15 @@
 
     // Reset state
     currentRoomId = '';
-    isPainting    = false;
-    shapeStart    = null;
+    isPainting = false;
+    shapeStart = null;
     remoteStrokes.clear();
 
     // Reset toolbar to defaults
     selectTool('pen');
-    currentColor  = '#1a1a2e';
-    lineWidth     = 3;
-    lineWidthInput.value = 3;
+    currentColor = '#1a1a2e';
+    lineWidth = 3;
+    lineWidthInputs.forEach(inp => { if (inp) inp.value = 3; });
     document.querySelectorAll('.color-swatch').forEach((b, i) => {
       b.classList.toggle('selected', i === 0);
     });
@@ -661,10 +756,12 @@
     memberCount.textContent = '0 人';
     // Ensure modals are hidden
     roomClosedOverlay.hidden = true;
-    confirmOverlay.hidden    = true;
+    confirmOverlay.hidden = true;
+    // Clear chat
+    chatMessages.innerHTML = '';
 
     // Switch screens
-    gameEl.hidden  = true;
+    gameEl.hidden = true;
     lobbyEl.hidden = false;
   }
 

@@ -227,6 +227,36 @@ func main() {
 				return exists && otherRoom == senderRoomC
 			})
 
+		case "chat":
+			// Relay chat message to everyone in the same room (including sender)
+			senderRoomChat, okChat := s.Get("room")
+			if !okChat {
+				return
+			}
+			// Inject sender's nickname into the message so recipients know who sent it
+			nick := "匿名玩家"
+			if n, ok := s.Get("nickname"); ok && n != "" {
+				nick = n.(string)
+			}
+			// Rebuild message with nickname embedded in data
+			type ChatData struct {
+				Text     string `json:"text"`
+				Nickname string `json:"nickname"`
+			}
+			var cd ChatData
+			json.Unmarshal(msg.Data, &cd)
+			cd.Nickname = nick
+			newData, _ := json.Marshal(cd)
+			outMsg, _ := json.Marshal(Message{
+				Event:  "chat",
+				RoomID: msg.RoomID,
+				Data:   json.RawMessage(newData),
+			})
+			m.BroadcastFilter(outMsg, func(other *melody.Session) bool {
+				otherRoom, exists := other.Get("room")
+				return exists && otherRoom == senderRoomChat
+			})
+
 		default:
 			log.Printf("[WS] Unhandled event: %q", msg.Event)
 		}
