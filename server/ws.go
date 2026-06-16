@@ -268,6 +268,59 @@ func SetupWebSockets(m *melody.Melody) {
 				target.Write(resp)
 			}
 
+		case "guess":
+			senderRoom, ok := s.Get("room")
+			if !ok {
+				return
+			}
+			
+			var guessData struct {
+				Guess string `json:"guess"`
+			}
+			if err := json.Unmarshal(msg.Data, &guessData); err != nil {
+				return
+			}
+
+			topic, ok := s.Get("current_topic")
+			if !ok {
+				return
+			}
+
+			correct := (guessData.Guess == topic.(string))
+			
+			nick := "匿名玩家"
+			if n, ok := s.Get("nickname"); ok && n != "" {
+				nick = n.(string)
+			}
+
+			respData, _ := json.Marshal(map[string]interface{}{
+				"correct":  correct,
+				"guess":    guessData.Guess,
+				"nickname": nick,
+			})
+
+			resp, _ := json.Marshal(Message{
+				Event:  "guess_result",
+				RoomID: senderRoom.(string),
+				Data:   json.RawMessage(respData),
+			})
+
+			// Send to sender (guesser)
+			s.Write(resp)
+
+			// Send to the drawer in the same room
+			m.BroadcastFilter(resp, func(other *melody.Session) bool {
+				if other == s {
+					return false
+				}
+				otherRoom, hasRoom := other.Get("room")
+				if !hasRoom || otherRoom != senderRoom {
+					return false
+				}
+				isDrawer, hasRole := other.Get("is_drawer")
+				return hasRole && isDrawer.(bool)
+			})
+
 		case "draw":
 			// Relay draw event to everyone in the same room, excluding the sender
 			senderRoom, ok := s.Get("room")

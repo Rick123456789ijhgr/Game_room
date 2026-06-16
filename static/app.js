@@ -433,6 +433,24 @@
         appendSystemMsg('🎮 遊戲開始！');
         break;
 
+      case 'guess_result':
+        const isCorrect = msg.data.correct;
+        const guessStr = msg.data.guess;
+        const nick = msg.data.nickname;
+        
+        const historyList = document.getElementById('guess-history-list');
+        const item = document.createElement('div');
+        item.className = 'guess-item ' + (isCorrect ? 'correct' : 'wrong');
+        item.textContent = (isCorrect ? '✅ ' : '❌ ') + nick + ': ' + guessStr;
+        historyList.appendChild(item);
+        historyList.scrollTop = historyList.scrollHeight;
+
+        if (isCorrect && myRole === 'guesser') {
+          document.getElementById('answer-input').disabled = true;
+          document.getElementById('answer-send').disabled = true;
+        }
+        break;
+
       case 'chat': {
         const d = msg.data || {};
         const isSelf = d.nickname === myNickname;
@@ -765,6 +783,13 @@
     const answerInput = document.getElementById('answer-input');
     const answerSend = document.getElementById('answer-send');
 
+    // Reset guessing state
+    document.getElementById('guess-history-list').innerHTML = '';
+    document.getElementById('guess-history-panel').hidden = false;
+    answerInput.disabled = false;
+    answerSend.disabled = false;
+    answerInput.value = '';
+
     if (myRole === 'drawer') {
       toolbarLeft.classList.remove('hidden-element');
       topicLabel.hidden = false;
@@ -837,6 +862,39 @@
       sendClear();
     });
   });
+
+  // ── Answer Input & Guess History ─────────────────────────
+  const guessHistoryHeader = document.getElementById('guess-history-header');
+  const guessHistoryPanel = document.getElementById('guess-history-panel');
+  if (guessHistoryHeader && guessHistoryPanel) {
+    guessHistoryHeader.addEventListener('click', () => {
+      guessHistoryPanel.classList.toggle('collapsed');
+    });
+  }
+
+  function submitGuess() {
+    if (myRole !== 'guesser') return;
+    const answerInput = document.getElementById('answer-input');
+    const guessStr = answerInput.value.trim();
+    if (!guessStr) return;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        event: 'guess',
+        room_id: currentRoomId,
+        data: { guess: guessStr }
+      }));
+    }
+    answerInput.value = '';
+  }
+
+  const answerSend = document.getElementById('answer-send');
+  const answerInput = document.getElementById('answer-input');
+  if (answerSend) answerSend.addEventListener('click', submitGuess);
+  if (answerInput) {
+    answerInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') submitGuess();
+    });
+  }
 
   // ── Lobby UI ──────────────────────────────────────────────
 

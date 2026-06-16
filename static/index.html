@@ -240,6 +240,15 @@
       <button id="answer-send">送出</button>
     </div><!-- /#answer-panel -->
 
+    <!-- Guess History Panel — bottom left -->
+    <div id="guess-history-panel" hidden>
+      <div class="guess-history-header" id="guess-history-header" style="cursor: pointer; display: flex; align-items: center;" title="點擊收起/展開紀錄">
+        <span style="flex: 1;">答題紀錄</span>
+        <span id="guess-history-toggle" style="font-size: 0.8rem; transition: transform 0.2s;">▼</span>
+      </div>
+      <div id="guess-history-list"></div>
+    </div>
+
     <!-- Chat panel was moved into sidebar-panel above -->
 
   </div><!-- /#game -->

@@ -1440,6 +1440,70 @@ body {
   box-shadow: 1px 1px 0px #111111;
 }
 
+/* ── Guess History Panel (bottom left) ───────────────── */
+#guess-history-panel {
+  position: absolute;
+  bottom: 24px;
+  left: 100px;
+  z-index: 200;
+  width: 260px;
+  max-height: 200px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 3px solid #111111;
+  border-radius: 16px;
+  box-shadow: 4px 4px 0px #111111;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+#guess-history-panel.collapsed {
+  max-height: 40px;
+}
+
+#guess-history-panel.collapsed #guess-history-toggle {
+  transform: rotate(-90deg);
+}
+
+.guess-history-header {
+  background: #f4c542;
+  color: #111;
+  font-weight: 900;
+  padding: 8px 12px;
+  border-bottom: 3px solid #111;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+#guess-history-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.guess-item {
+  font-size: 0.95rem;
+  font-weight: 700;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 2px solid #111;
+  word-break: break-all;
+}
+
+.guess-item.wrong {
+  background: #ffeaeb;
+  color: #d32f2f;
+}
+
+.guess-item.correct {
+  background: #e8f5e9;
+  color: #388e3c;
+}
+
 /* ── Floating toolbar (left side) ───────────────── */
 #toolbar-left {
   position: absolute;
