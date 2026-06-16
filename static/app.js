@@ -107,6 +107,7 @@
   let shapeStart = null;  // { x, y } for shape tools
   let currentRoomId = '';    // set when player_joined is received
   let amIHost = false;       // track local player's host status
+  let myRole = 'guesser';    // 'drawer' or 'guesser'
 
   // ── Remote stroke state (per peer) ───────────────────────
   /**
@@ -281,21 +282,25 @@
   function isFreeDraw() { return currentTool === 'pen' || currentTool === 'eraser'; }
 
   function onDown(x, y) {
+    if (myRole !== 'drawer') return;
     if (isFreeDraw()) startStroke(x, y);
     else startShape(x, y);
   }
 
   function onMove(x, y) {
+    if (myRole !== 'drawer') return;
     if (isFreeDraw()) continueStroke(x, y);
     else previewShape(x, y);
   }
 
   function onUp(x, y) {
+    if (myRole !== 'drawer') return;
     if (isFreeDraw()) endStroke();
     else finaliseShape(x, y);
   }
 
   function onCancel() {
+    if (myRole !== 'drawer') return;
     if (isFreeDraw()) endStroke();
     else cancelShape();
   }
@@ -355,7 +360,7 @@
     ws.addEventListener('open', () => {
       console.log('[WS] Connection established ✅');
       setStatus(action === 'create_room' ? '正在建立房間…' : '正在搜尋房間…');
-      sendJSON({ event: action, room_id: roomId, data: { nickname: myNickname } });
+      sendJSON({ event: action, room_id: roomId, client_id: clientId, data: { nickname: myNickname } });
     });
 
     ws.addEventListener('message', (evt) => {
@@ -422,7 +427,9 @@
 
       case 'game_start':
         console.log('[WS] game_start — entering canvas');
-        showGame(currentRoomId);
+        const role = msg.data && msg.data.role ? msg.data.role : 'guesser';
+        const topic = msg.data && msg.data.topic ? msg.data.topic : '';
+        showGame(currentRoomId, role, topic);
         appendSystemMsg('🎮 遊戲開始！');
         break;
 
@@ -551,7 +558,7 @@
     members.forEach(m => {
       const li = document.createElement('li');
       const avatar = m.nickname ? m.nickname[0].toUpperCase() : '?';
-      const isSelf = m.nickname === myNickname;
+      const isSelf = m.client_id === clientId;
       let badgesHtml = '';
       if (m.is_host) badgesHtml += '<span class="member-host-badge">👑 房主</span>';
       if (isSelf) badgesHtml += '<span class="member-self-badge">我</span>';
@@ -720,14 +727,60 @@
   // Waiting room: leave button
   wrLeaveBtn.addEventListener('click', () => returnToLobby());
 
-  function showGame(roomId) {
+  function showGame(roomId, role, topic) {
     currentRoomId = roomId;
+    myRole = role || 'guesser';
     resizeCanvases();
     lobbyEl.hidden = true;
     waitingRoomEl.hidden = true;
     gameEl.hidden = false;
     roomLabel.textContent = `房間：${roomId}`;
     setGameStatus('已連線');
+
+    // Show role overlay
+    const roleOverlay = document.getElementById('role-overlay');
+    const roleIcon = document.getElementById('role-icon');
+    const roleTitle = document.getElementById('role-title');
+    const roleDesc = document.getElementById('role-desc');
+    
+    if (myRole === 'drawer') {
+      roleIcon.textContent = '🎨';
+      roleTitle.textContent = '你是畫家';
+      roleDesc.textContent = '請在畫布上作畫，讓其他人猜猜看！';
+    } else {
+      roleIcon.textContent = '🤔';
+      roleTitle.textContent = '你是猜題者';
+      roleDesc.textContent = '請仔細看畫布，並在下方輸入你的答案！';
+    }
+    
+    roleOverlay.hidden = false;
+    setTimeout(() => {
+      roleOverlay.hidden = true;
+    }, 3000);
+
+    // Toggle UI elements based on role
+    const toolbarLeft = document.getElementById('toolbar-left');
+    const topicLabel = document.getElementById('topic-label');
+    const topicWord = document.getElementById('topic-word');
+    const answerInput = document.getElementById('answer-input');
+    const answerSend = document.getElementById('answer-send');
+
+    if (myRole === 'drawer') {
+      toolbarLeft.classList.remove('hidden-element');
+      topicLabel.hidden = false;
+      topicWord.hidden = false;
+      if (topic) topicWord.textContent = topic;
+      answerInput.hidden = true;
+      answerSend.hidden = true;
+      localCanvas.style.cursor = currentTool === 'eraser' ? 'cell' : 'crosshair';
+    } else {
+      toolbarLeft.classList.add('hidden-element');
+      topicLabel.hidden = true;
+      topicWord.hidden = true;
+      answerInput.hidden = false;
+      answerSend.hidden = false;
+      localCanvas.style.cursor = 'default';
+    }
   }
 
   // ── Toolbar: colour swatches ──────────────────────────────
@@ -748,12 +801,14 @@
       b.classList.toggle('selected', b.dataset.tool === tool)
     );
     // Cursor feedback
-    if (tool === 'eraser') {
-      localCanvas.style.cursor = 'cell';
-    } else if (tool === 'pen') {
-      localCanvas.style.cursor = 'crosshair';
+    if (myRole === 'drawer') {
+      if (tool === 'eraser') {
+        localCanvas.style.cursor = 'cell';
+      } else {
+        localCanvas.style.cursor = 'crosshair';
+      }
     } else {
-      localCanvas.style.cursor = 'crosshair';
+      localCanvas.style.cursor = 'default';
     }
   }
 

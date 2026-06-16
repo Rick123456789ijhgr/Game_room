@@ -17,6 +17,9 @@ func main() {
 		port = "8080"
 	}
 
+	// Load questions
+	server.LoadQuestions()
+
 	// Initialise Melody WebSocket manager
 	m := melody.New()
 

@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"log"
+	"math/rand"
 
 	"github.com/olahol/melody"
 )
@@ -69,6 +70,7 @@ func SetupWebSockets(m *melody.Melody) {
 			s.Set("nickname", nick)
 			s.Set("is_host", true)
 			s.Set("is_ready", true) // Host is always ready
+			s.Set("client_id", msg.ClientID)
 			log.Printf("[WS] %s created room %q as %q (host)", s.Request.RemoteAddr, msg.RoomID, nick)
 
 			resp, _ := json.Marshal(Message{
@@ -115,6 +117,7 @@ func SetupWebSockets(m *melody.Melody) {
 			s.Set("nickname", nick)
 			s.Set("is_host", false)
 			s.Set("is_ready", false) // Non-host starts as not ready
+			s.Set("client_id", msg.ClientID)
 			log.Printf("[WS] %s joined room %q as %q", s.Request.RemoteAddr, msg.RoomID, nick)
 
 			// Notify everyone in room that a player joined (with nickname)
@@ -223,15 +226,47 @@ func SetupWebSockets(m *melody.Melody) {
 			}
 
 			log.Printf("[WS] Game starting in room %q", roomID)
-			resp, _ := json.Marshal(Message{
-				Event:  "game_start",
-				RoomID: roomID,
-				Data:   json.RawMessage(`{}`),
-			})
-			m.BroadcastFilter(resp, func(other *melody.Session) bool {
-				r, ok := other.Get("room")
-				return ok && r == roomID
-			})
+			
+			// Find all sessions in the room
+			sessionsInRoom := []*melody.Session{}
+			sessions, _ := m.Sessions()
+			for _, other := range sessions {
+				if r, ok := other.Get("room"); ok && r == roomID {
+					sessionsInRoom = append(sessionsInRoom, other)
+				}
+			}
+
+			if len(sessionsInRoom) == 0 {
+				return
+			}
+
+			// Select a random drawer and topic
+			drawerIdx := rand.Intn(len(sessionsInRoom))
+			topic := GetRandomTopic()
+
+			for i, target := range sessionsInRoom {
+				isDrawer := (i == drawerIdx)
+				target.Set("is_drawer", isDrawer)
+				target.Set("current_topic", topic)
+				
+				role := "guesser"
+				sentTopic := ""
+				if isDrawer {
+					role = "drawer"
+					sentTopic = topic
+				}
+
+				dataBytes, _ := json.Marshal(map[string]string{
+					"role":  role,
+					"topic": sentTopic,
+				})
+				resp, _ := json.Marshal(Message{
+					Event:  "game_start",
+					RoomID: roomID,
+					Data:   json.RawMessage(dataBytes),
+				})
+				target.Write(resp)
+			}
 
 		case "draw":
 			// Relay draw event to everyone in the same room, excluding the sender

@@ -26,7 +26,11 @@ func buildMemberList(m *melody.Melody, roomID string) []MemberInfo {
 		if rd, ok := s.Get("is_ready"); ok {
 			isReady = rd.(bool)
 		}
-		members = append(members, MemberInfo{Nickname: nick, IsHost: isHost, IsReady: isReady})
+		clientID := ""
+		if cid, ok := s.Get("client_id"); ok {
+			clientID = cid.(string)
+		}
+		members = append(members, MemberInfo{Nickname: nick, IsHost: isHost, IsReady: isReady, ClientID: clientID})
 	}
 	return members
 }

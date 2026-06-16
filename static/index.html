@@ -230,8 +230,12 @@
       </div>
     </div>
 
-    <!-- Answer Input — bottom centre -->
+    <!-- Answer Input / Topic Display — bottom centre -->
     <div id="answer-panel">
+      <!-- For Drawer: Topic text (replaces input+button) -->
+      <span id="topic-label" hidden style="color: #64748b; font-size: 1rem; font-weight: 800; white-space: nowrap;">你的題目：</span>
+      <span id="topic-word" hidden style="font-size: 1.5rem; font-weight: 900; color: #111111; letter-spacing: 2px; flex: 1; text-align: center;">(之後將從題庫隨機抽取)</span>
+      <!-- For Guesser: Answer input -->
       <input id="answer-input" type="text" placeholder="輸入答案猜測…" autocomplete="off" maxlength="30" />
       <button id="answer-send">送出</button>
     </div><!-- /#answer-panel -->
@@ -262,6 +266,15 @@
       <div class="confirm-actions">
         <button id="room-closed-ok">回到大廳</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Role Assignment Overlay -->
+  <div id="role-overlay" hidden>
+    <div id="role-box">
+      <div class="role-icon" id="role-icon">🎨</div>
+      <h3 id="role-title">你是...</h3>
+      <p id="role-desc">請準備</p>
     </div>
   </div>
 
