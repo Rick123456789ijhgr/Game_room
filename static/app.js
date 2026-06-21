@@ -48,6 +48,11 @@
   const wrStartBtn = document.getElementById('wr-start-btn');
   const wrStatus = document.getElementById('wr-status');
   const wrLeaveBtn = document.getElementById('wr-leave-btn');
+  const wrScoreMinus = document.getElementById('wr-score-minus');
+  const wrScorePlus = document.getElementById('wr-score-plus');
+  const wrTargetScoreDisplay = document.getElementById('wr-target-score-display');
+  const wrScoreGoal = document.getElementById('wr-score-goal');
+  const wrSettingsWrap = document.getElementById('wr-settings-wrap');
 
   // ── Nickname state ────────────────────────────────────────────
   let myNickname = '匿名玩家';
@@ -59,25 +64,26 @@
   });
 
   // ── Sidebar toggling ──────────────────────────────────────
+  // Default: member section is collapsed (no expanded class)
+  memberToggle.style.transform = 'rotate(-90deg)'; // arrow points right when collapsed
+
   document.getElementById('member-panel-header').addEventListener('click', () => {
-    const isCollapsed = memberSection.classList.contains('collapsed');
+    const isExpanded = memberSection.classList.contains('expanded');
 
     // Hide scrollbar during animation
     memberList.style.overflowY = 'hidden';
 
-    if (isCollapsed) {
-      memberSection.classList.remove('collapsed');
-      sidebarDivider.style.display = "block";
-      memberToggle.style.transform = "rotate(0deg)";
+    if (isExpanded) {
+      memberSection.classList.remove('expanded');
+      memberToggle.style.transform = 'rotate(-90deg)';
     } else {
-      memberSection.classList.add('collapsed');
-      sidebarDivider.style.display = "none";
-      memberToggle.style.transform = "rotate(-90deg)";
+      memberSection.classList.add('expanded');
+      memberToggle.style.transform = 'rotate(0deg)';
     }
 
     // Restore scrollbar only after expansion finishes
     setTimeout(() => {
-      if (!memberSection.classList.contains('collapsed')) {
+      if (memberSection.classList.contains('expanded')) {
         memberList.style.overflowY = 'auto';
       }
     }, 300); // matches the 0.3s CSS transition duration
@@ -111,6 +117,11 @@
 
   // ── Round timer state ─────────────────────────────────
   let roundTimerInterval = null;
+
+  // ── Score state ──────────────────────────────────────
+  let targetScore = 10;       // win condition
+  let currentScores = {};     // nickname → score
+  let wrTargetScore = 10;     // setting in waiting room
 
   // ── Remote stroke state (per peer) ───────────────────────
   /**
@@ -428,15 +439,26 @@
         returnToLobby();
         break;
 
-      case 'game_start':
+      case 'game_start': {
         console.log('[WS] game_start — entering canvas');
         const role = msg.data && msg.data.role ? msg.data.role : 'guesser';
         const topic = msg.data && msg.data.topic ? msg.data.topic : '';
         const drawerNick = msg.data && msg.data.drawer_nick ? msg.data.drawer_nick : '';
+        if (msg.data && msg.data.scores) currentScores = msg.data.scores;
+        if (msg.data && msg.data.target_score) targetScore = msg.data.target_score;
+        const isOvertime = msg.data && msg.data.overtime;
+        const isFirstRound = gameEl.hidden; // still hidden → first time entering game
         stopRoundTimer();
-        showGame(currentRoomId, role, topic, drawerNick);
-        appendSystemMsg('🎮 遊戲開始！');
+        showGame(currentRoomId, role, topic, drawerNick, isOvertime);
+        renderScoreboard();
+        if (isFirstRound) {
+          appendSystemMsg(isOvertime ? '⏰ 加時賽開始！' : '🎮 遊戲開始！');
+        } else {
+          const drawerLabel = drawerNick ? `「${drawerNick}」` : '新畫家';
+          appendSystemMsg(`🔄 換題了！${drawerLabel} 擔任畫家`);
+        }
         break;
+      }
 
       case 'guess_result':
         const isCorrect = msg.data.correct;
@@ -492,8 +514,41 @@
 
       case 'round_end': {
         const answer = msg.data && msg.data.answer ? msg.data.answer : '???';
+        if (msg.data && msg.data.scores) {
+          currentScores = msg.data.scores;
+          renderScoreboard();
+        }
         stopRoundTimer();
         showRoundEnd(answer);
+        break;
+      }
+
+      case 'score_update': {
+        if (msg.data) {
+          currentScores = msg.data;
+          renderScoreboard();
+        }
+        break;
+      }
+
+      case 'room_settings': {
+        if (msg.data && msg.data.target_score) {
+          targetScore = msg.data.target_score;
+          wrTargetScore = msg.data.target_score;
+          updateWrSettingsDisplay();
+          updateScoreTargetBadge();
+        }
+        break;
+      }
+
+      case 'game_over': {
+        stopRoundTimer();
+        const winner = msg.data && msg.data.winner ? msg.data.winner : '';
+        const overtime = msg.data && msg.data.overtime;
+        const scores = msg.data && msg.data.scores ? msg.data.scores : {};
+        currentScores = scores;
+        renderScoreboard();
+        showGameOver(winner, overtime, scores);
         break;
       }
 
@@ -690,6 +745,16 @@
     wrReadyBtn.querySelector('.wr-ready-icon').textContent = '✅';
     wrStartBtn.disabled = true;
     wrStatus.textContent = '';
+
+    // Settings panel: only host can interact
+    if (wrSettingsWrap) {
+      if (amIHost) {
+        wrSettingsWrap.classList.remove('wr-settings-readonly');
+      } else {
+        wrSettingsWrap.classList.add('wr-settings-readonly');
+      }
+    }
+    updateWrSettingsDisplay();
   }
 
   function renderWaitingRoomMembers(members) {
@@ -776,7 +841,31 @@
   // Waiting room: leave button
   wrLeaveBtn.addEventListener('click', () => returnToLobby());
 
-  function showGame(roomId, role, topic, drawerNick) {
+  // Waiting room: score settings (host only)
+  function updateWrSettingsDisplay() {
+    if (wrTargetScoreDisplay) wrTargetScoreDisplay.textContent = wrTargetScore;
+    if (wrScoreGoal) wrScoreGoal.textContent = wrTargetScore;
+  }
+
+  if (wrScoreMinus) {
+    wrScoreMinus.addEventListener('click', () => {
+      if (!amIHost) return;
+      wrTargetScore = Math.max(1, wrTargetScore - 1);
+      updateWrSettingsDisplay();
+      sendJSON({ event: 'set_room_settings', room_id: currentRoomId, data: { target_score: wrTargetScore } });
+    });
+  }
+
+  if (wrScorePlus) {
+    wrScorePlus.addEventListener('click', () => {
+      if (!amIHost) return;
+      wrTargetScore = Math.min(100, wrTargetScore + 1);
+      updateWrSettingsDisplay();
+      sendJSON({ event: 'set_room_settings', room_id: currentRoomId, data: { target_score: wrTargetScore } });
+    });
+  }
+
+  function showGame(roomId, role, topic, drawerNick, isOvertime) {
     currentRoomId = roomId;
     myRole = role || 'guesser';
     resizeCanvases();
@@ -784,7 +873,13 @@
     waitingRoomEl.hidden = true;
     gameEl.hidden = false;
     roomLabel.textContent = `房間：${roomId}`;
-    setGameStatus('已連線');
+    setGameStatus(isOvertime ? '加時賽！' : '已連線');
+
+    // Clear all canvas layers for the new round
+    localCtx.clearRect(0, 0, localCanvas.width, localCanvas.height);
+    remoteCtx.clearRect(0, 0, remoteCanvas.width, remoteCanvas.height);
+    previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+    remoteStrokes.clear();
 
     // Hide round-end overlay if visible from previous round
     const roundEndOverlay = document.getElementById('round-end-overlay');
@@ -1076,6 +1171,79 @@
     }, 5000);
   }
 
+  // ── Scoreboard rendering ─────────────────────────────────
+  function renderScoreboard() {
+    const scoreList = document.getElementById('score-list');
+    if (!scoreList) return;
+    scoreList.innerHTML = '';
+
+    // Sort by score descending
+    const sorted = Object.entries(currentScores).sort((a, b) => b[1] - a[1]);
+    sorted.forEach(([nick, score], i) => {
+      const li = document.createElement('li');
+      li.className = 'score-item';
+      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
+      const isLeading = score >= targetScore;
+      li.innerHTML = `
+        <span class="score-rank">${medal}</span>
+        <span class="score-nick">${escapeHtml(nick)}</span>
+        <span class="score-val${isLeading ? ' score-leading' : ''}">${score}</span>
+      `;
+      scoreList.appendChild(li);
+    });
+  }
+
+  function updateScoreTargetBadge() {
+    const badge = document.getElementById('score-target-badge');
+    if (badge) badge.textContent = `目標:${targetScore}`;
+  }
+
+  // ── Game over overlay ─────────────────────────────────
+  function showGameOver(winner, overtime, scores) {
+    const overlay = document.getElementById('game-over-overlay');
+    const titleEl = document.getElementById('game-over-title');
+    const subtitleEl = document.getElementById('game-over-subtitle');
+    const iconEl = document.getElementById('game-over-icon');
+    const scoresEl = document.getElementById('game-over-scores');
+    if (!overlay) return;
+
+    if (overtime) {
+      iconEl.textContent = '⏰';
+      titleEl.textContent = '加時賽！';
+      subtitleEl.textContent = '同分！加時賽即將開始，繼續比到出現唯一最高分為止。';
+    } else {
+      iconEl.textContent = '🏆';
+      titleEl.textContent = '遊戲結束！';
+      subtitleEl.textContent = `🎉 【${escapeHtml(winner)}】 獲得勝利！`;
+    }
+
+    // Final scoreboard
+    scoresEl.innerHTML = '';
+    const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+    sorted.forEach(([nick, score], i) => {
+      const row = document.createElement('div');
+      row.className = 'go-score-row' + (nick === winner ? ' go-winner' : '');
+      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
+      row.innerHTML = `<span class="go-rank">${medal}</span><span class="go-nick">${escapeHtml(nick)}</span><span class="go-score">${score}</span>`;
+      scoresEl.appendChild(row);
+    });
+
+    overlay.hidden = false;
+
+    if (overtime) {
+      // Auto-dismiss after 4 s for overtime (next round auto-starts via host)
+      setTimeout(() => { overlay.hidden = true; }, 4000);
+    }
+  }
+
+  const gameOverOk = document.getElementById('game-over-ok');
+  if (gameOverOk) {
+    gameOverOk.addEventListener('click', () => {
+      document.getElementById('game-over-overlay').hidden = true;
+      returnToLobby();
+    });
+  }
+
   /**
    * returnToLobby — cleanly tears down the current session:
    *   1. Closes WebSocket connection
@@ -1104,8 +1272,13 @@
     shapeStart = null;
     remoteStrokes.clear();
     stopRoundTimer();
+    currentScores = {};
+    targetScore = 10;
+    wrTargetScore = 10;
     const roundEndOverlay = document.getElementById('round-end-overlay');
     if (roundEndOverlay) roundEndOverlay.hidden = true;
+    const gameOverOverlay = document.getElementById('game-over-overlay');
+    if (gameOverOverlay) gameOverOverlay.hidden = true;
 
     // Reset toolbar to defaults
     selectTool('pen');

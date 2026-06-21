@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"math/rand"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,8 +14,10 @@ import (
 // ── Room state (per roomID) ───────────────────────────────────────────────────
 
 type RoomState struct {
-	UsedDrawers []string // nicknames that have already drawn this cycle
+	UsedDrawers []string       // nicknames that have already drawn this cycle
 	TimerCancel chan struct{}
+	TargetScore int            // win condition (default 10)
+	IsOvertime  bool           // true when we're in overtime mode
 }
 
 var (
@@ -26,7 +29,7 @@ func getRoomState(roomID string) *RoomState {
 	roomsMu.Lock()
 	defer roomsMu.Unlock()
 	if rooms[roomID] == nil {
-		rooms[roomID] = &RoomState{}
+		rooms[roomID] = &RoomState{TargetScore: 10}
 	}
 	return rooms[roomID]
 }
@@ -99,7 +102,12 @@ func startRoundTimer(m *melody.Melody, roomID string, duration time.Duration, de
 			}
 		}
 
-		roundEndData, _ := json.Marshal(map[string]string{"answer": topic})
+		// Build scores snapshot to include in round_end
+		scores := buildScores(m, roomID)
+		roundEndData, _ := json.Marshal(map[string]interface{}{
+			"answer": topic,
+			"scores": scores,
+		})
 		roundEndMsg, _ := json.Marshal(Message{
 			Event:  "round_end",
 			RoomID: roomID,
@@ -176,6 +184,121 @@ func pickNextDrawer(m *melody.Melody, roomID string) *melody.Session {
 	return chosen
 }
 
+// buildScores returns a map of nickname → score for all players in the room.
+func buildScores(m *melody.Melody, roomID string) map[string]int {
+	result := map[string]int{}
+	sessions, _ := m.Sessions()
+	for _, s := range sessions {
+		if r, ok := s.Get("room"); !ok || r != roomID {
+			continue
+		}
+		nick := "匿名玩家"
+		if n, ok := s.Get("nickname"); ok && n != "" {
+			nick = n.(string)
+		}
+		score := 0
+		if sc, ok := s.Get("score"); ok {
+			score = sc.(int)
+		}
+		result[nick] = score
+	}
+	return result
+}
+
+// checkWinCondition checks if any player has reached the target score.
+// Returns (winner nickname, isOvertime, shouldContinue).
+// - winner != "" → someone won
+// - shouldContinue → tied or no winner yet
+func checkWinCondition(m *melody.Melody, roomID string) (winner string, isTied bool) {
+	rs := getRoomState(roomID)
+
+	roomsMu.Lock()
+	target := rs.TargetScore
+	roomsMu.Unlock()
+
+	scores := buildScores(m, roomID)
+
+	maxScore := 0
+	for _, sc := range scores {
+		if sc > maxScore {
+			maxScore = sc
+		}
+	}
+
+	if maxScore < target {
+		return "", false // no one reached target yet
+	}
+
+	// Find all players at max score
+	var leaders []string
+	for nick, sc := range scores {
+		if sc == maxScore {
+			leaders = append(leaders, nick)
+		}
+	}
+
+	if len(leaders) == 1 {
+		return leaders[0], false // clear winner
+	}
+	// Multiple players tied at the target → overtime
+	return "", true
+}
+
+// broadcastScores sends the current scoreboard to all players in the room.
+func broadcastScores(m *melody.Melody, roomID string) {
+	scores := buildScores(m, roomID)
+	data, _ := json.Marshal(scores)
+	msg, _ := json.Marshal(Message{
+		Event:  "score_update",
+		RoomID: roomID,
+		Data:   json.RawMessage(data),
+	})
+	broadcastToRoom(m, roomID, msg)
+}
+
+// ── Rate Limiting & Profanity Filter ─────────────────────────────────────────
+
+var profanityList = []string{"幹", "靠杯", "沙小", "機掰", "屌", "媽的", "fuck", "shit", "bitch"}
+
+// censorMessage replaces bad words with ***
+func censorMessage(text string) string {
+	lowerText := strings.ToLower(text)
+	for _, word := range profanityList {
+		if strings.Contains(lowerText, strings.ToLower(word)) {
+			// Basic case-insensitive replace by looking up the lowercased word
+			// Since Go's strings.ReplaceAll is case-sensitive, we can do a naive 
+			// case-insensitive replace by using a regex, or simply replace the original text using strings.ReplaceAll for the exact word.
+			// Let's use simple ReplaceAll for exact matched words for simplicity.
+			text = strings.ReplaceAll(text, word, "***")
+		}
+	}
+	return text
+}
+
+// containsProfanity checks if the text contains any bad words
+func containsProfanity(text string) bool {
+	lowerText := strings.ToLower(text)
+	for _, word := range profanityList {
+		if strings.Contains(lowerText, strings.ToLower(word)) {
+			return true
+		}
+	}
+	return false
+}
+
+// checkRateLimit returns true if the user is sending messages too fast
+func checkRateLimit(s *melody.Session) bool {
+	lastMsgTime, ok := s.Get("last_msg_time")
+	now := time.Now()
+	if ok {
+		if now.Sub(lastMsgTime.(time.Time)) < 1*time.Second {
+			return false // Rate limited
+		}
+	}
+	s.Set("last_msg_time", now)
+	return true
+}
+
 // ── WebSocket handler setup ───────────────────────────────────────────────────
 
 func SetupWebSockets(m *melody.Melody) {
@@ -243,7 +366,11 @@ func SetupWebSockets(m *melody.Melody) {
 			s.Set("is_host", true)
 			s.Set("is_ready", true) // Host is always ready
 			s.Set("client_id", msg.ClientID)
+			s.Set("score", 0)
 			log.Printf("[WS] %s created room %q as %q (host)", s.Request.RemoteAddr, msg.RoomID, nick)
+
+			// Ensure room state exists with default target score
+			getRoomState(msg.RoomID)
 
 			resp, _ := json.Marshal(Message{
 				Event:  "room_created",
@@ -254,6 +381,8 @@ func SetupWebSockets(m *melody.Melody) {
 
 			// Broadcast member list (just self)
 			broadcastMemberList(m, msg.RoomID)
+			// Send current room settings to the creator
+			broadcastRoomSettings(m, msg.RoomID)
 
 		case "join_room":
 			// Check if room exists and if game is in progress
@@ -304,6 +433,7 @@ func SetupWebSockets(m *melody.Melody) {
 			s.Set("is_host", false)
 			s.Set("is_ready", false) // Non-host starts as not ready
 			s.Set("client_id", msg.ClientID)
+			s.Set("score", 0)
 			log.Printf("[WS] %s joined room %q as %q", s.Request.RemoteAddr, msg.RoomID, nick)
 
 			// Notify everyone in room that a player joined (with nickname)
@@ -320,6 +450,8 @@ func SetupWebSockets(m *melody.Melody) {
 
 			// Then send updated member list to all
 			broadcastMemberList(m, msg.RoomID)
+			// Send current room settings to the new joiner
+			broadcastRoomSettings(m, msg.RoomID)
 
 		case "player_ready":
 			// Toggle is_ready for sender
@@ -338,6 +470,42 @@ func SetupWebSockets(m *melody.Melody) {
 			s.Set("is_ready", !current)
 			log.Printf("[WS] %s toggled ready → %v in room %q", s.Request.RemoteAddr, !current, senderRoom)
 			broadcastMemberList(m, senderRoom.(string))
+
+		case "set_room_settings":
+			// Only host can change settings
+			isHost := false
+			if h, ok := s.Get("is_host"); ok {
+				isHost = h.(bool)
+			}
+			if !isHost {
+				return
+			}
+			senderRoom, ok := s.Get("room")
+			if !ok {
+				return
+			}
+			roomID := senderRoom.(string)
+
+			var settingsData struct {
+				TargetScore int `json:"target_score"`
+			}
+			if err := json.Unmarshal(msg.Data, &settingsData); err != nil {
+				return
+			}
+			if settingsData.TargetScore < 1 {
+				settingsData.TargetScore = 1
+			}
+			if settingsData.TargetScore > 100 {
+				settingsData.TargetScore = 100
+			}
+
+			rs := getRoomState(roomID)
+			roomsMu.Lock()
+			rs.TargetScore = settingsData.TargetScore
+			roomsMu.Unlock()
+
+			log.Printf("[WS] Room %q target score set to %d", roomID, settingsData.TargetScore)
+			broadcastRoomSettings(m, roomID)
 
 		case "kick_player":
 			// Only host can kick
@@ -413,9 +581,19 @@ func SetupWebSockets(m *melody.Melody) {
 
 			log.Printf("[WS] Game starting in room %q", roomID)
 
-			// Reset room state (new game, fresh drawer queue)
+			// Reset scores for all players in the room
+			sessions, _ := m.Sessions()
+			for _, sess := range sessions {
+				if r, ok := sess.Get("room"); ok && r == roomID {
+					sess.Set("score", 0)
+				}
+			}
+
+			// Reset room state but preserve target score
+			rs := getRoomState(roomID)
 			roomsMu.Lock()
-			rooms[roomID] = &RoomState{}
+			target := rs.TargetScore
+			rooms[roomID] = &RoomState{TargetScore: target}
 			roomsMu.Unlock()
 
 			startRound(m, roomID)
@@ -443,10 +621,40 @@ func SetupWebSockets(m *melody.Melody) {
 				return
 			}
 
+			// Prevent drawer or already correct guessers from guessing
+			if isDrawer, ok := s.Get("is_drawer"); ok && isDrawer.(bool) {
+				return
+			}
+			if guessed, ok := s.Get("guessed_correctly"); ok && guessed.(bool) {
+				return
+			}
+
 			var guessData struct {
 				Guess string `json:"guess"`
 			}
 			if err := json.Unmarshal(msg.Data, &guessData); err != nil {
+				return
+			}
+
+			// ── Rate Limiting ──
+			if !checkRateLimit(s) {
+				resp, _ := json.Marshal(Message{
+					Event:  "error",
+					RoomID: senderRoom.(string),
+					Data:   json.RawMessage(`{"message":"發送太快了，請稍後再試！"}`),
+				})
+				s.Write(resp)
+				return
+			}
+
+			// ── Profanity Filter ──
+			if containsProfanity(guessData.Guess) {
+				resp, _ := json.Marshal(Message{
+					Event:  "error",
+					RoomID: senderRoom.(string),
+					Data:   json.RawMessage(`{"message":"您的猜測包含不雅字詞，請重新輸入！"}`),
+				})
+				s.Write(resp)
 				return
 			}
 
@@ -462,10 +670,24 @@ func SetupWebSockets(m *melody.Melody) {
 				nick = n.(string)
 			}
 
+			// Update score if correct
+			newScore := 0
+			if correct {
+				curScore := 0
+				if sc, ok := s.Get("score"); ok {
+					curScore = sc.(int)
+				}
+				newScore = curScore + 1
+				s.Set("score", newScore)
+				s.Set("guessed_correctly", true)
+				log.Printf("[WS] %q scored! New score: %d in room %q", nick, newScore, senderRoom)
+			}
+
 			respData, _ := json.Marshal(map[string]interface{}{
-				"correct":  correct,
-				"guess":    guessData.Guess,
-				"nickname": nick,
+				"correct":   correct,
+				"guess":     guessData.Guess,
+				"nickname":  nick,
+				"new_score": newScore,
 			})
 
 			resp, _ := json.Marshal(Message{
@@ -477,18 +699,95 @@ func SetupWebSockets(m *melody.Melody) {
 			// Send to sender (guesser)
 			s.Write(resp)
 
-			// Send to the drawer in the same room
+			// Send to everyone else in room (for guess history visibility)
 			m.BroadcastFilter(resp, func(other *melody.Session) bool {
 				if other == s {
 					return false
 				}
 				otherRoom, hasRoom := other.Get("room")
-				if !hasRoom || otherRoom != senderRoom {
-					return false
-				}
-				isDrawer, hasRole := other.Get("is_drawer")
-				return hasRole && isDrawer.(bool)
+				return hasRoom && otherRoom == senderRoom
 			})
+
+			// Broadcast updated scores to all
+			if correct {
+				// Handle drawer scoring & early termination
+				sessions, _ := m.Sessions()
+				var drawerSess *melody.Session
+				totalGuessers := 0
+				correctGuessers := 0
+
+				for _, sess := range sessions {
+					if r, ok := sess.Get("room"); ok && r == senderRoom {
+						if isD, _ := sess.Get("is_drawer"); isD != nil && isD.(bool) {
+							drawerSess = sess
+						} else {
+							totalGuessers++
+							if gc, _ := sess.Get("guessed_correctly"); gc != nil && gc.(bool) {
+								correctGuessers++
+							}
+						}
+					}
+				}
+
+				if drawerSess != nil {
+					awardedFirst, _ := drawerSess.Get("drawer_awarded_first")
+					if awardedFirst != nil && !awardedFirst.(bool) {
+						// Drawer gets 1 pt for first correct guess
+						curDrawerScore := 0
+						if sc, ok := drawerSess.Get("score"); ok {
+							curDrawerScore = sc.(int)
+						}
+						drawerSess.Set("score", curDrawerScore+1)
+						drawerSess.Set("drawer_awarded_first", true)
+						log.Printf("[WS] Drawer awarded 1 pt for first correct guess in room %q", senderRoom)
+					}
+
+					// Perfect score check
+					if correctGuessers == totalGuessers && totalGuessers > 0 {
+						// Drawer gets another point
+						curDrawerScore := 0
+						if sc, ok := drawerSess.Get("score"); ok {
+							curDrawerScore = sc.(int)
+						}
+						drawerSess.Set("score", curDrawerScore+1)
+						log.Printf("[WS] Drawer awarded 1 extra pt for PERFECT round in room %q", senderRoom)
+					}
+				}
+
+				broadcastScores(m, senderRoom.(string))
+
+				// Check win condition
+				winner, isTied := checkWinCondition(m, senderRoom.(string))
+				if winner != "" {
+					// Clear winner found → game over
+					cancelRoomTimer(senderRoom.(string))
+					broadcastGameOver(m, senderRoom.(string), winner, false)
+				} else if isTied {
+					// Tied → cancel current timer and signal overtime
+					cancelRoomTimer(senderRoom.(string))
+					rs := getRoomState(senderRoom.(string))
+					roomsMu.Lock()
+					rs.IsOvertime = true
+					roomsMu.Unlock()
+					broadcastGameOver(m, senderRoom.(string), "", true)
+				} else if correctGuessers == totalGuessers && totalGuessers > 0 {
+					// Early termination
+					cancelRoomTimer(senderRoom.(string))
+					// Broadcast round_end manually
+					scores := buildScores(m, senderRoom.(string))
+					roundEndData, _ := json.Marshal(map[string]interface{}{
+						"answer": topic.(string),
+						"scores": scores,
+					})
+					roundEndMsg, _ := json.Marshal(Message{
+						Event:  "round_end",
+						RoomID: senderRoom.(string),
+						Data:   json.RawMessage(roundEndData),
+					})
+					broadcastToRoom(m, senderRoom.(string), roundEndMsg)
+					log.Printf("[WS] Round ended early for room %q — all guessers correct!", senderRoom)
+				}
+			}
 
 		case "draw":
 			// Relay draw event to everyone in the same room, excluding the sender
@@ -524,18 +823,49 @@ func SetupWebSockets(m *melody.Melody) {
 			if !okChat {
 				return
 			}
-			// Inject sender's nickname into the message so recipients know who sent it
-			nick := "匿名玩家"
-			if n, ok := s.Get("nickname"); ok && n != "" {
-				nick = n.(string)
+
+			// ── Rate Limiting ──
+			if !checkRateLimit(s) {
+				resp, _ := json.Marshal(Message{
+					Event:  "error",
+					RoomID: senderRoomChat.(string),
+					Data:   json.RawMessage(`{"message":"發送太快了，請稍後再試！"}`),
+				})
+				s.Write(resp)
+				return
 			}
-			// Rebuild message with nickname embedded in data
+
 			type ChatData struct {
 				Text     string `json:"text"`
 				Nickname string `json:"nickname"`
 			}
 			var cd ChatData
-			json.Unmarshal(msg.Data, &cd)
+			if err := json.Unmarshal(msg.Data, &cd); err != nil {
+				return
+			}
+
+			// ── Answer Leakage Prevention ──
+			if topic, ok := s.Get("current_topic"); ok && topic != "" && topic != nil {
+				if strings.Contains(strings.ToLower(cd.Text), strings.ToLower(topic.(string))) {
+					resp, _ := json.Marshal(Message{
+						Event:  "error",
+						RoomID: senderRoomChat.(string),
+						Data:   json.RawMessage(`{"message":"🤫 請不要在聊天室洩露答案！"}`),
+					})
+					s.Write(resp)
+					return
+				}
+			}
+
+			// ── Profanity Filter ──
+			cd.Text = censorMessage(cd.Text)
+
+			// Inject sender's nickname into the message so recipients know who sent it
+			nick := "匿名玩家"
+			if n, ok := s.Get("nickname"); ok && n != "" {
+				nick = n.(string)
+			}
+
 			cd.Nickname = nick
 			newData, _ := json.Marshal(cd)
 			outMsg, _ := json.Marshal(Message{
@@ -554,6 +884,40 @@ func SetupWebSockets(m *melody.Melody) {
 	})
 }
 
+// broadcastRoomSettings sends current room settings to all players in the room.
+func broadcastRoomSettings(m *melody.Melody, roomID string) {
+	rs := getRoomState(roomID)
+	roomsMu.Lock()
+	target := rs.TargetScore
+	roomsMu.Unlock()
+
+	data, _ := json.Marshal(map[string]int{"target_score": target})
+	msg, _ := json.Marshal(Message{
+		Event:  "room_settings",
+		RoomID: roomID,
+		Data:   json.RawMessage(data),
+	})
+	broadcastToRoom(m, roomID, msg)
+}
+
+// broadcastGameOver sends a game_over event to all players.
+// winner="" + overtime=true means tied overtime round.
+func broadcastGameOver(m *melody.Melody, roomID string, winner string, overtime bool) {
+	scores := buildScores(m, roomID)
+	data, _ := json.Marshal(map[string]interface{}{
+		"winner":   winner,
+		"overtime": overtime,
+		"scores":   scores,
+	})
+	msg, _ := json.Marshal(Message{
+		Event:  "game_over",
+		RoomID: roomID,
+		Data:   json.RawMessage(data),
+	})
+	broadcastToRoom(m, roomID, msg)
+	log.Printf("[WS] Game over in room %q — winner: %q overtime: %v", roomID, winner, overtime)
+}
+
 // startRound picks the next drawer, broadcasts game_start to all, then
 // launches the countdown timer (5 s delay + 30 s round).
 func startRound(m *melody.Melody, roomID string) {
@@ -564,15 +928,30 @@ func startRound(m *melody.Melody, roomID string) {
 
 	topic := GetRandomTopic()
 
+	// Fetch current scores to include in game_start (so clients can display scoreboard)
+	scores := buildScores(m, roomID)
+
+	// Check if this is overtime
+	rs := getRoomState(roomID)
+	roomsMu.Lock()
+	isOvertime := rs.IsOvertime
+	target := rs.TargetScore
+	roomsMu.Unlock()
+
 	sessions, _ := m.Sessions()
-	for _, target := range sessions {
-		if r, ok := target.Get("room"); !ok || r != roomID {
+	for _, target_sess := range sessions {
+		if r, ok := target_sess.Get("room"); !ok || r != roomID {
 			continue
 		}
-		isDrawer := (target == drawer)
-		target.Set("is_drawer", isDrawer)
-		target.Set("current_topic", topic)
-		target.Set("is_playing", true)
+		isDrawer := (target_sess == drawer)
+		target_sess.Set("is_drawer", isDrawer)
+		target_sess.Set("current_topic", topic)
+		target_sess.Set("is_playing", true)
+		target_sess.Set("guessed_correctly", false)
+
+		if isDrawer {
+			target_sess.Set("drawer_awarded_first", false)
+		}
 
 		role := "guesser"
 		sentTopic := ""
@@ -585,26 +964,29 @@ func startRound(m *melody.Melody, roomID string) {
 			sentTopic = topic
 		}
 
-		dataBytes, _ := json.Marshal(map[string]string{
-			"role":        role,
-			"topic":       sentTopic,
-			"drawer_nick": drawerNick,
+		dataBytes, _ := json.Marshal(map[string]interface{}{
+			"role":         role,
+			"topic":        sentTopic,
+			"drawer_nick":  drawerNick,
+			"scores":       scores,
+			"target_score": target,
+			"overtime":     isOvertime,
 		})
 		resp, _ := json.Marshal(Message{
 			Event:  "game_start",
 			RoomID: roomID,
 			Data:   json.RawMessage(dataBytes),
 		})
-		target.Write(resp)
+		target_sess.Write(resp)
 	}
 
 	// 5 s role overlay + 1 s buffer = 6 s delay before countdown begins
 	// Then 30 s for the round itself
 	startRoundTimer(m, roomID, 30*time.Second, 6*time.Second)
-	log.Printf("[WS] Round started in room %q — drawer: %s, topic: %s", roomID, func() string {
+	log.Printf("[WS] Round started in room %q — drawer: %s, topic: %s, overtime: %v", roomID, func() string {
 		if n, ok := drawer.Get("nickname"); ok {
 			return n.(string)
 		}
 		return "?"
-	}(), topic)
+	}(), topic, isOvertime)
 }

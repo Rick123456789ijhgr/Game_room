@@ -117,6 +117,20 @@
         <ul id="wr-member-list"></ul>
       </div>
 
+      <!-- Game Settings (host only) -->
+      <div class="wr-settings-wrap" id="wr-settings-wrap">
+        <div class="wr-section-label">⚙️ 遊戲設定</div>
+        <div class="wr-setting-row">
+          <label class="wr-setting-label" for="wr-target-score">🏆 獲勝分數</label>
+          <div class="wr-setting-control">
+            <button class="wr-score-btn" id="wr-score-minus" title="減少">－</button>
+            <span id="wr-target-score-display">10</span>
+            <button class="wr-score-btn" id="wr-score-plus" title="增加">＋</button>
+          </div>
+        </div>
+        <p class="wr-setting-hint" id="wr-setting-hint">先得 <strong id="wr-score-goal">10</strong> 分者獲勝</p>
+      </div>
+
       <!-- Bottom action bar -->
       <div class="wr-action-bar">
         <!-- Non-host: Ready toggle button -->
@@ -162,6 +176,18 @@
           <span id="member-toggle" style="margin-left:auto; font-size: 0.8rem; transition: transform 0.2s;">▼</span>
         </div>
         <ul id="member-list"></ul>
+      </div>
+
+      <div class="sidebar-divider"></div>
+
+      <!-- Scoreboard Section -->
+      <div id="score-section">
+        <div class="sidebar-header">
+          <span>🏆</span>
+          <span>計分板</span>
+          <span id="score-target-badge" style="margin-left:auto; font-size:0.75rem; background:#ffd93d; color:#111; border-radius:8px; padding:1px 8px; font-weight:900;">目標:10</span>
+        </div>
+        <ul id="score-list"></ul>
       </div>
 
       <div class="sidebar-divider"></div>
@@ -310,6 +336,17 @@
           <div id="round-end-bar-wrap"><div id="round-end-bar"></div></div>
           <p id="round-end-next-msg">下一輪即將開始…</p>
         </div>
+      </div>
+    </div>
+
+    <!-- Game Over Overlay -->
+    <div id="game-over-overlay" hidden>
+      <div id="game-over-box">
+        <div id="game-over-icon">🏆</div>
+        <h2 id="game-over-title">遊戲結束！</h2>
+        <p id="game-over-subtitle"></p>
+        <div id="game-over-scores"></div>
+        <button id="game-over-ok" class="game-over-btn">回到大廳</button>
       </div>
     </div>
 
