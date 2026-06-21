@@ -61,7 +61,7 @@
   // ── Sidebar toggling ──────────────────────────────────────
   document.getElementById('member-panel-header').addEventListener('click', () => {
     const isCollapsed = memberSection.classList.contains('collapsed');
-    
+
     // Hide scrollbar during animation
     memberList.style.overflowY = 'hidden';
 
@@ -108,6 +108,9 @@
   let currentRoomId = '';    // set when player_joined is received
   let amIHost = false;       // track local player's host status
   let myRole = 'guesser';    // 'drawer' or 'guesser'
+
+  // ── Round timer state ─────────────────────────────────
+  let roundTimerInterval = null;
 
   // ── Remote stroke state (per peer) ───────────────────────
   /**
@@ -429,7 +432,9 @@
         console.log('[WS] game_start — entering canvas');
         const role = msg.data && msg.data.role ? msg.data.role : 'guesser';
         const topic = msg.data && msg.data.topic ? msg.data.topic : '';
-        showGame(currentRoomId, role, topic);
+        const drawerNick = msg.data && msg.data.drawer_nick ? msg.data.drawer_nick : '';
+        stopRoundTimer();
+        showGame(currentRoomId, role, topic, drawerNick);
         appendSystemMsg('🎮 遊戲開始！');
         break;
 
@@ -437,7 +442,7 @@
         const isCorrect = msg.data.correct;
         const guessStr = msg.data.guess;
         const nick = msg.data.nickname;
-        
+
         const historyList = document.getElementById('guess-history-list');
         const item = document.createElement('div');
         item.className = 'guess-item ' + (isCorrect ? 'correct' : 'wrong');
@@ -446,8 +451,21 @@
         historyList.scrollTop = historyList.scrollHeight;
 
         if (isCorrect && myRole === 'guesser') {
-          document.getElementById('answer-input').disabled = true;
-          document.getElementById('answer-send').disabled = true;
+          const ansInput = document.getElementById('answer-input');
+          const ansSend = document.getElementById('answer-send');
+
+          ansInput.disabled = true;
+          ansInput.classList.add('locked');
+          ansInput.value = '🔒 你已答對！請等待回合結束';
+
+          ansSend.disabled = true;
+          ansSend.classList.add('locked');
+
+          const correctOverlay = document.getElementById('correct-overlay');
+          if (correctOverlay) {
+            correctOverlay.hidden = false;
+            setTimeout(() => correctOverlay.hidden = true, 2500);
+          }
         }
         break;
 
@@ -465,6 +483,19 @@
       case 'clear':
         remoteCtx.clearRect(0, 0, remoteCanvas.width, remoteCanvas.height);
         break;
+
+      case 'round_timer_start': {
+        const seconds = msg.data && msg.data.seconds ? msg.data.seconds : 30;
+        startRoundTimer(seconds);
+        break;
+      }
+
+      case 'round_end': {
+        const answer = msg.data && msg.data.answer ? msg.data.answer : '???';
+        stopRoundTimer();
+        showRoundEnd(answer);
+        break;
+      }
 
       case 'error':
         console.warn(`[WS] Error:`, msg.data.message);
@@ -745,7 +776,7 @@
   // Waiting room: leave button
   wrLeaveBtn.addEventListener('click', () => returnToLobby());
 
-  function showGame(roomId, role, topic) {
+  function showGame(roomId, role, topic, drawerNick) {
     currentRoomId = roomId;
     myRole = role || 'guesser';
     resizeCanvases();
@@ -755,12 +786,16 @@
     roomLabel.textContent = `房間：${roomId}`;
     setGameStatus('已連線');
 
+    // Hide round-end overlay if visible from previous round
+    const roundEndOverlay = document.getElementById('round-end-overlay');
+    if (roundEndOverlay) roundEndOverlay.hidden = true;
+
     // Show role overlay
     const roleOverlay = document.getElementById('role-overlay');
     const roleIcon = document.getElementById('role-icon');
     const roleTitle = document.getElementById('role-title');
     const roleDesc = document.getElementById('role-desc');
-    
+
     if (myRole === 'drawer') {
       roleIcon.textContent = '🎨';
       roleTitle.textContent = '你是畫家';
@@ -768,13 +803,28 @@
     } else {
       roleIcon.textContent = '🤔';
       roleTitle.textContent = '你是猜題者';
-      roleDesc.textContent = '請仔細看畫布，並在下方輸入你的答案！';
+      const who = drawerNick ? `「${drawerNick}」` : '畫家';
+      roleDesc.textContent = `請仔細看${who}畫的內容，並在下方輸入你的答案！`;
     }
-    
+
+    if (window.roleCountdownInterval) {
+      clearInterval(window.roleCountdownInterval);
+    }
+
+    let countdownValue = 5;
+    const countdownDisplay = document.getElementById('countdown-display');
+    if (countdownDisplay) countdownDisplay.textContent = countdownValue;
     roleOverlay.hidden = false;
-    setTimeout(() => {
-      roleOverlay.hidden = true;
-    }, 3000);
+
+    window.roleCountdownInterval = setInterval(() => {
+      countdownValue--;
+      if (countdownValue > 0) {
+        if (countdownDisplay) countdownDisplay.textContent = countdownValue;
+      } else {
+        clearInterval(window.roleCountdownInterval);
+        roleOverlay.hidden = true;
+      }
+    }, 1000);
 
     // Toggle UI elements based on role
     const toolbarLeft = document.getElementById('toolbar-left');
@@ -787,7 +837,9 @@
     document.getElementById('guess-history-list').innerHTML = '';
     document.getElementById('guess-history-panel').hidden = false;
     answerInput.disabled = false;
+    answerInput.classList.remove('locked');
     answerSend.disabled = false;
+    answerSend.classList.remove('locked');
     answerInput.value = '';
 
     if (myRole === 'drawer') {
@@ -959,6 +1011,71 @@
     returnToLobby();
   });
 
+  // ── Round timer HUD ───────────────────────────────────
+  function startRoundTimer(seconds) {
+    stopRoundTimer();
+    const timerHud = document.getElementById('round-timer-hud');
+    const timerCount = document.getElementById('round-timer-count');
+    if (!timerHud || !timerCount) return;
+
+    let remaining = seconds;
+    timerCount.textContent = remaining;
+    timerHud.hidden = false;
+    timerHud.classList.remove('timer-urgent');
+
+    roundTimerInterval = setInterval(() => {
+      remaining--;
+      timerCount.textContent = remaining;
+      if (remaining <= 10) {
+        timerHud.classList.add('timer-urgent');
+      }
+      if (remaining <= 0) {
+        stopRoundTimer();
+      }
+    }, 1000);
+  }
+
+  function stopRoundTimer() {
+    if (roundTimerInterval) {
+      clearInterval(roundTimerInterval);
+      roundTimerInterval = null;
+    }
+    const timerHud = document.getElementById('round-timer-hud');
+    if (timerHud) {
+      timerHud.hidden = true;
+      timerHud.classList.remove('timer-urgent');
+    }
+  }
+
+  // ── Round end overlay ─────────────────────────────────
+  function showRoundEnd(answer) {
+    const overlay = document.getElementById('round-end-overlay');
+    const answerEl = document.getElementById('round-end-answer');
+    const bar = document.getElementById('round-end-bar');
+    if (!overlay) return;
+
+    if (answerEl) answerEl.textContent = answer;
+    overlay.hidden = false;
+
+    // Animate the progress bar over 5 seconds
+    if (bar) {
+      bar.style.transition = 'none';
+      bar.style.width = '100%';
+      // Force reflow
+      bar.offsetWidth;
+      bar.style.transition = 'width 5s linear';
+      bar.style.width = '0%';
+    }
+
+    // After 5 s, host sends next_round; all clients hide the overlay
+    setTimeout(() => {
+      overlay.hidden = true;
+      if (amIHost && ws && ws.readyState === WebSocket.OPEN) {
+        sendJSON({ event: 'next_round', room_id: currentRoomId, data: {} });
+      }
+    }, 5000);
+  }
+
   /**
    * returnToLobby — cleanly tears down the current session:
    *   1. Closes WebSocket connection
@@ -986,6 +1103,9 @@
     isPainting = false;
     shapeStart = null;
     remoteStrokes.clear();
+    stopRoundTimer();
+    const roundEndOverlay = document.getElementById('round-end-overlay');
+    if (roundEndOverlay) roundEndOverlay.hidden = true;
 
     // Reset toolbar to defaults
     selectTool('pen');

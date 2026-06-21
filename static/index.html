@@ -147,6 +147,8 @@
       <span id="room-label">房間</span>
       <span class="hud-sep">·</span>
       <span id="status-msg-game">連線中</span>
+      <span class="hud-sep">·</span>
+      <span id="round-timer-hud" hidden>⏱ <span id="round-timer-count">30</span>s</span>
     </div>
 
     <!-- Unified Sidebar Panel — right side -->
@@ -278,14 +280,38 @@
     </div>
   </div>
 
-  <!-- Role Assignment Overlay -->
-  <div id="role-overlay" hidden>
-    <div id="role-box">
-      <div class="role-icon" id="role-icon">🎨</div>
-      <h3 id="role-title">你是...</h3>
-      <p id="role-desc">請準備</p>
+    <!-- Role Overlay -->
+    <div id="role-overlay" hidden>
+      <div id="role-box" style="display: flex; align-items: center; gap: 32px; padding: 2rem 3rem;">
+        <div id="countdown-display" style="font-size: 6rem; font-weight: 900; color: #ffd93d; min-width: 100px; text-align: center; text-shadow: 0 0 20px rgba(255,217,61,0.5);">5</div>
+        <div id="role-content" style="display: flex; flex-direction: column; align-items: center; border-left: 2px solid rgba(255,255,255,0.2); padding-left: 32px;">
+          <div id="role-icon">🎨</div>
+          <h2 id="role-title">你是畫家</h2>
+          <p id="role-desc">請等待其他人加入，稍後會提示你要畫的題目</p>
+        </div>
+      </div>
     </div>
-  </div>
+
+    <!-- Correct Answer Overlay -->
+    <div id="correct-overlay" hidden>
+      <div class="correct-box">
+        <div class="correct-icon">🎉</div>
+        <h2>恭喜答對！</h2>
+      </div>
+    </div>
+
+    <!-- Round End Overlay -->
+    <div id="round-end-overlay" hidden>
+      <div id="round-end-box">
+        <div id="round-end-icon">⏰</div>
+        <h2 id="round-end-title">時間到！</h2>
+        <p id="round-end-answer-row">答案是：<strong id="round-end-answer"></strong></p>
+        <div id="round-end-next-row">
+          <div id="round-end-bar-wrap"><div id="round-end-bar"></div></div>
+          <p id="round-end-next-msg">下一輪即將開始…</p>
+        </div>
+      </div>
+    </div>
 
   <script src="app.js"></script>
 </body>
